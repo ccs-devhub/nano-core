@@ -9,6 +9,12 @@
 #+LAST_UPDATE: Dec 23, 2025
 #+VERSION: v1.0.0
 
+#+BEGIN_HTML
+<p align="center">
+  <img src=".github/logo-nano-core-main.png" width="280" alt="nano-core logo">
+</p>
+#+END_HTML
+
 
 #+begin_center
 [[file:.github/logo-nano-core-main.png]]
