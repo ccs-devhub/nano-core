@@ -13,6 +13,7 @@
   <picture>
     <img src=".github/logo-nano-core-main.png" width="30%" alt="Project logo"/>
   </picture>
+  <span>nano-core</span>
 </p>
 
 <div align="center">
@@ -31,23 +32,15 @@
 </a>
 </div>
 <br>
-<p style="max-width: 720px; font-size: 0.95em; line-height: 1.5; text-align: center; margin: 1em auto;">
-  <em>
-    <a href="https://github.com/ccs-devhub">Cyber Code Syndicate (CCS)</a>
-    desarrolla software como una herramienta para el aprendizaje, la colaboración
-    y la práctica tecnológica ética.
-  </em>
-  Nuestros proyectos se fundamentan en la autonomía del usuario, la transparencia,
-  la accesibilidad y la libertad de elección, priorizando a las personas por encima
-  de las plataformas. CCS es una iniciativa comunitaria, abierta e inclusiva,
-  orientada a la educación, el conocimiento compartido y la participación responsable.
-  No impone una ideología única ni un modelo de licenciamiento; en su lugar, promueve
-  la toma de decisiones informada, el pensamiento modular y el desarrollo consciente.
-  <strong>Este proyecto forma parte de esa visión.</strong>
-  Para un marco conceptual más detallado, consulte el
-  <a href="https://zenodo.org/records/17994539">CCS Vision Paper</a>.
-</p>
 #+END_HTML
+
+#+begin_quote
+/[[https://github.com/ccs-devhub][Cyber Code Syndicate (CCS)]] desarrolla software como una herramienta para el aprendizaje, la colaboración y la práctica tecnológica ética./ Nuestros proyectos se guían por principios de autonomía del usuario, transparencia, accesibilidad y libertad de elección, priorizando a las personas por encima de las plataformas. CCS es una iniciativa centrada en la comunidad, enfocada en la educación, el conocimiento compartido y la participación inclusiva; está abierta y es bienvenedora para todas las personas.
+
+CCS no impone una ideología única ni un modelo de licenciamiento. En su lugar fomentamos la toma de decisiones informada, el pensamiento modular y el desarrollo responsable, confiando en que los contribuyentes elijan cómo se construye, comparte y extiende el software. *Este proyecto forma parte de esa visión más amplia.*
+
+*Te invitamos a explorar la comunidad CCS, contribuir en las formas que mejor se adapten a ti y leer el [[https://zenodo.org/records/17994539?token=eyJhbGciOiJIUzUxMiJ9.eyJpZCI6IjY3YTQzMTE2LWQ4N2MtNGZjOC04NDc5LWFiZjYyMTg4YzQwZSIsImRhdGEiOnt9LCJyYW5kb20iOiI4MTY3MmRkYzkwNzBiMWQyYjczZDFjMzE3MzUwMWRiYSJ9.BBX99OVZpu0p9fj6Bu8g-V1M3KNmwPPBWyEBP3_h9r_U7RR7LeB_LE_t5-PgX-z3w_fdE976cv8tdVRAbTLA9A][CCS Vision Paper]] para comprender mejor los principios y valores que guían nuestro trabajo.*
+#+end_quote
 
 *nano-core* es un core ligero y modular para Discord bots, licenciado bajo la [[file:LICENSE][Mozilla Public License v2.0 (MPL v2)]]. Proporciona la infraestructura básica necesaria para construir bots de Discord totalmente personalizados, con un enfoque en la *extensibilidad*, *adaptabilidad* y la *libertad del usuario*. La *MPL v2* preserva la libertad del software en el core, pero permite que contribuyentes y comunidades desarrollen, compartan e inyecten nuevas funcionalidades bajo cualquier licencia.
 
