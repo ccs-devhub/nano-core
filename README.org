@@ -10,8 +10,13 @@
 #+VERSION: v1.0.0
 
 #+BEGIN_HTML
+<p align="center">
+  <picture>
+    <img src=".github/logo-nano-core-main.png" width="20%" alt="Project logo"/>
+  </picture>
+</p>
+
 <div align="center">
-<img src=".github/logo-nano-core-main.png" width="280" alt="nano-core logo">
 <a href="https://github.com/ccs-devhub/nano-core">
   <img src="https://img.shields.io/github/languages/top/ccs-devhub/nano-core.png" alt="Top language">
 </a>
