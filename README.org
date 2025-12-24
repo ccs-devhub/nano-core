@@ -11,9 +11,11 @@
 
 #+BEGIN_HTML
 <div align="center">
+<img src=".github/logo-nano-core-main.png" width="280" alt="nano-core logo">
 <a href="https://github.com/ccs-devhub/nano-core">
   <img src="https://img.shields.io/github/languages/top/ccs-devhub/nano-core.png" alt="Top language">
 </a>
+<br>
 <a href="https://github.com/ccs-devhub">
   <img src="https://img.shields.io/github/followers/ccs-devhub.png" alt="GitHub followers">
 </a>
@@ -24,6 +26,7 @@
   <img src="https://img.shields.io/twitter/follow/ccs_devhub.png" alt="X followers">
 </a>
 </div>
+<br>
 #+END_HTML
 
 #+begin_center
