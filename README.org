@@ -10,21 +10,21 @@
 #+VERSION: v1.0.0
 
 #+BEGIN_HTML
-<p align="center">
-  <img src=".github/logo-nano-core-main.png" width="280" alt="nano-core logo">
-</p>
+<div align="center">
+<a href="https://github.com/ccs-devhub/nano-core">
+  <img src="https://img.shields.io/github/languages/top/ccs-devhub/nano-core.png" alt="Top language">
+</a>
+<a href="https://github.com/ccs-devhub">
+  <img src="https://img.shields.io/github/followers/ccs-devhub.png" alt="GitHub followers">
+</a>
+<a href="https://github.com/ccs-devhub">
+  <img src="https://img.shields.io/github/stars/ccs-devhub.png" alt="GitHub stars">
+</a>
+<a href="https://x.com/ccs_devhub">
+  <img src="https://img.shields.io/twitter/follow/ccs_devhub.png" alt="X followers">
+</a>
+</div>
 #+END_HTML
-
-
-#+begin_center
-[[file:.github/logo-nano-core-main.png]]
-
-[[https://github.com/ccs-devhub/nano-core][https://img.shields.io/github/languages/top/ccs-devhub/nano-core.png]]
-
-[[https://github.com/ccs-devhub][https://img.shields.io/github/followers/ccs-devhub.png]]
-[[https://github.com/ccs-devhub][https://img.shields.io/github/stars/ccs-devhub.png]]
-[[https://x.com/ccs_devhub][https://img.shields.io/twitter/follow/ccs_devhub.png]]
-#+end_center
 
 #+begin_center
 /[[https://github.com/ccs-devhub][Cyber Code Syndicate (CCS)]] desarrolla software como una herramienta para el aprendizaje, la colaboración y la práctica tecnológica ética./ Nuestros proyectos se guían por principios de autonomía del usuario, transparencia, accesibilidad y libertad de elección, priorizando a las personas por encima de las plataformas. CCS es una iniciativa centrada en la comunidad, enfocada en la educación, el conocimiento compartido y la participación inclusiva; está abierta y es bienvenedora para todas las personas.
