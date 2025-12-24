@@ -13,8 +13,8 @@
   <picture>
     <img src=".github/logo-nano-core-main.png" width="30%" alt="Project logo"/>
   </picture>
-  <span>nano-core</span>
 </p>
+<h3>nano-core</h3>
 
 <div align="center">
 <a href="https://github.com/ccs-devhub/nano-core">
