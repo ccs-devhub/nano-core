@@ -1,0 +1,64 @@
+#+TITLE: nano-core: Modular Discord Bot Core
+#+DATE: Dec 23, 2025
+#+AUTHOR: Cristian D. Moreno - Kyonax~\orcidlink{0009-0006-4459-5538}\affiliation{Cyber Code Syndicate (CCS) - Member}
+#+OPTIONS: toc:nil num:nil H:5
+#+KEYWORDS: ethical software, education, free software, open source, community, CCS
+#+LANGUAGE: en
+#+PROJECT: Cyber Code Syndicate
+#+SOURCE_URL: https://github.com/ccs-devhub
+#+LAST_UPDATE: Dec 23, 2025
+#+VERSION: v1.0.0
+
+#+begin_abstract
+/[[https://github.com/ccs-devhub][Cyber Code Syndicate (CCS)]] builds software as a tool for learning, collaboration, and ethical technological practice./ Our projects are guided by principles of user autonomy, transparency, accessibility, and freedom of choice, prioritizing people over platforms. CCS is a community-first initiative focused on education, shared knowledge, and inclusive participation, and is open and welcoming to everyone.
+
+CCS does not enforce a single ideology or licensing model. Instead, we encourage informed decision-making, modular thinking, and responsible development, trusting contributors to choose how software is built, shared, and extended. *This project is part of that broader vision.*
+
+*We invite you to explore the CCS community, contribute in the ways that suit you, and read the full [[https://zenodo.org/records/17994539?token=eyJhbGciOiJIUzUxMiJ9.eyJpZCI6IjY3YTQzMTE2LWQ4N2MtNGZjOC04NDc5LWFiZjYyMTg4YzQwZSIsImRhdGEiOnt9LCJyYW5kb20iOiI4MTY3MmRkYzkwNzBiMWQyYjczZDFjMzE3MzUwMWRiYSJ9.BBX99OVZpu0p9fj6Bu8g-V1M3KNmwPPBWyEBP3_h9r_U7RR7LeB_LE_t5-PgX-z3w_fdE976cv8tdVRAbTLA9A][CCS Vision Paper]] to better understand the principles and values that guide our work.*
+#+end_abstract
+
+*nano-core* is a lightweight, modular Discord bot core licensed under the [[file:LICENSE][Mozilla Public License v2.0 (MPL v2)]]. It provides the core infrastructure necessary for building fully customized Discord bots, focusing on *extensibility*, *adaptability*, and *user freedom*. The *MPL v2* preserves software freedom in the core, but allows contributors and communities to develop, share, and inject new features under any license.
+
+#+begin_comment
+*Key Features:*
+- Minimal, extensible core
+- Dynamic command/event handler watching folders for plugins
+- Injection of new features (modules) via simple commands or folder additions
+- Easy integration of community-driven development
+- Designed to be forked, extended, and adapted at will
+#+end_comment
+
+* Why nano-core? | The Problem & Our Solution
+Most Discord bots today are bulky, packed with countless features you’ll *never* use, or locked behind paywalls and premium subscriptions. To get the functionality you need, you often end up adding several bots, cluttering your server and making it harder to manage and control your setup. Features are monolithic, hard to remove or adapt, and communities around individual functionality rarely exist.
+
+nano-core solves this.
+
+Instead of downloading a bloated bot, nano-core encourages *you* to deploy your own bot and *inject* exactly the features you want, /(just like installing packages in Linux)/. Through an easy folder-based, command-driven system, you can add, remove, or reinstall features (modules) in minutes. Each module can have its own community, documentation, and license, making nano-core *highly customizable*, *modular*, and *future-proof*. You build the bot you need, no more wasting money, server resources, or effort on features you don’t want.
+
+* Licensing & Community Principles
+The *core* of nano-core is free software, protected by the Mozilla Public License v2.0. This ensures everyone can use, study, modify, and share the foundational code. At the same time, *modules/extensions* (plugins, commands, events) can use any license, reflecting CCS’s dedication to *autonomy* and *inclusive participation*. Contributors only need to clearly state the license of their modules.
+
+*Repository Structure:*
+- Core files (command/event handlers, injection system): [[file:LICENSE][MPL v2.0]]
+- Modules/extensions: Any license (must specify in folder or header)
+
+*Licensing Section:*
+#+begin_quote
+All core files are licensed under the [[file:LICENSE][Mozilla Public License, version 2.0 (MPL v2.0)]].
+Modules and extensions may use any license. Please include a LICENSE file or header in each module/extension.
+This model ensures a free software core and respects diverse contributions, following CCS principles of user autonomy, collaboration, and learning.
+#+end_quote
+
+#+begin_comment
+* Getting Started
+1. Clone or fork this repository.
+2. Set up your own bot (see [[./docs/SETUP.org]] for quick start).
+3. Inject new features by downloading modules or adding them to the appropriate folder.
+4. Modify, extend, or remove functionality as you wish.
+
+* Community & Contributing
+nano-core is *community-driven*. Anyone can contribute core improvements (under MPL v2.0) or modules (under their chosen license). Share your modules, help others learn, and join discussions—see [[https://github.com/ccs-devhub]] for CCS resources and how to participate.
+#+end_comment
+
+* Final Invitation
+Don't settle for generic bots and wasted resources—build the *most customizable, modular Discord bot* tailored to your needs, with the CCS community supporting your journey. *You* define your bot’s features, licensing, and destiny.
