@@ -41,6 +41,9 @@ eslint.config.mjs
 Maintainer(s): Cristian D. Moreno – Kyonax
 Cyber Code Syndicate (CCS) – 2025
 */
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import js from '@eslint/js';
 import { defineConfig } from 'eslint/config';
 
@@ -53,6 +56,9 @@ import unicorn_plugin from 'eslint-plugin-unicorn';
 import tseslint from 'typescript-eslint';
 
 import globals from 'globals';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Constant Variables
 const INDENTATION_SPACES = 2;
@@ -84,8 +90,23 @@ export default defineConfig([
     ],
     settings: {
       'import/resolver': {
-        typescript: { project: './tsconfig.json' },
-        node: { extensions: ['.js', '.ts', '.mts', '.cts'] },
+        alias: {
+          map: [
+            ['@', path.resolve(__dirname, 'src')],
+            ['@/misc', path.resolve(__dirname, 'src/lib/misc')],
+            ['@/constants', path.resolve(__dirname, 'src/lib/constants')],
+            ['@/commands', path.resolve(__dirname, 'src/lib/commands')],
+            ['@/events', path.resolve(__dirname, 'src/lib/events')],
+            ['@/snippets', path.resolve(__dirname, 'src/lib/snippets')],
+          ],
+          extensions: ['.js', '.ts', '.mjs', '.cjs', '.mts', '.cts'],
+        },
+        typescript: {
+          project: path.resolve(__dirname, 'tsconfig.json'),
+        },
+        node: {
+          extensions: ['.js', '.ts', '.mjs', '.cjs', '.mts', '.cts'],
+        },
       },
     },
     rules: {
@@ -185,7 +206,32 @@ export default defineConfig([
         {
           selector: 'variable',
           modifiers: ['const'],
+          format: null,
+          leadingUnderscore: 'require',
+          filter: {
+            regex: '^_+[a-zA-Z0-9]+$',
+            match: true,
+          },
+        },
+        {
+          selector: 'variable',
+          modifiers: ['const'],
+          format: ['snake_case'],
+          leadingUnderscore: 'allow',
+          filter: {
+            regex: '_+[a-z]+(_[a-z]+)*$',
+            match: true,
+          },
+        },
+        {
+          selector: 'variable',
+          modifiers: ['const'],
           format: ['UPPER_CASE'],
+          leadingUnderscore: 'allow',
+          filter: {
+            regex: '_+[a-z]+(_[a-z]+)*$',
+            match: false,
+          },
         },
         { selector: 'parameter', format: ['snake_case'] },
         { selector: 'class', format: ['PascalCase'] },

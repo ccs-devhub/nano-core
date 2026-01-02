@@ -11,7 +11,12 @@
         "esModuleInterop": true,
         "forceConsistentCasingInFileNames": true,
         "paths": {
-            "@/*": ["src/*"]
+            "@/*": ["src/*"],
+            "@/misc/*": ["src/lib/misc/*"],
+            "@/constants/*": ["src/lib/constants/*"],
+            "@/commands/*": ["src/core/commands/*"],
+            "@/events/*": ["src/core/events/*"],
+            "@/snippets/*": ["src/lib/snippets/*"]
         },
         "types": [
             "node"
