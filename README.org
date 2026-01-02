@@ -10,7 +10,7 @@
 
 #+BEGIN_HTML
 <p align="center">
-  <pre>
+  <p>
 
                                  █
                                 █ █
@@ -49,7 +49,7 @@
                                          █▓█
 
                                               █
-  </pre>
+  </p>
 </p>
 <div align="center">
 <h2>nano-core</h2>
