@@ -59,8 +59,10 @@
   [[file:rules/rule-module-authoring.org][module authoring]].
 
 * Core utilities available to modules
-  Everything is imported from =@ccs-devhub/nano-core= (inside this repo,
-  via the =@/= aliases). All API helpers take plain ids, return
+  Everything is imported from =@ccs-devhub/nano-core= — the package
+  name resolves everywhere, including the bundled =modules/= folder
+  (tsconfig maps it to =src/lib/index.ts=). All API helpers take
+  plain ids, return
   =NanoResult<T>= envelopes (={ ok, data | error }=), and produce
   JSON-friendly summaries — deliberately easy to expose to an AI or MCP
   tool layer.

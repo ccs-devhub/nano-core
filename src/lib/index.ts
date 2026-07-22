@@ -35,6 +35,16 @@ export * from '@/services/scheduler.js';
 export * from '@/types/nano-module.js';
 export * from '@/types/nano-result.js';
 export * from '@/types/nano-services.js';
+export type {
+  AutocompleteInteraction,
+  ChatInputCommandInteraction,
+  Client,
+  EmbedBuilder,
+  Guild,
+  Role,
+  SlashCommandStringOption,
+  SlashCommandSubcommandBuilder,
+} from 'discord.js';
 export {
   bold,
   channelMention,
@@ -44,6 +54,7 @@ export {
   inlineCode,
   italic,
   roleMention,
+  SlashCommandBuilder,
   time,
   TimestampStyles,
   userMention,

@@ -12,6 +12,7 @@
         "esModuleInterop": true,
         "forceConsistentCasingInFileNames": true,
         "paths": {
+            "@ccs-devhub/nano-core": ["src/lib/index.ts"],
             "@/*": ["src/*"],
             "@/misc/*": ["src/lib/misc/*"],
             "@/constants/*": ["src/lib/constants/*"],

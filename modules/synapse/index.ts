@@ -1,32 +1,32 @@
 import type {
   AutocompleteInteraction,
+  ChannelSummary,
   ChatInputCommandInteraction,
   Client,
   EmbedBuilder,
   Guild,
-  Role,
-  SlashCommandStringOption,
-  SlashCommandSubcommandBuilder
-} from 'discord.js';
-import { SlashCommandBuilder } from 'discord.js';
-
-import type { ChannelSummary } from '@/api/channel.js';
-import { buttonRow } from '@/api/component.js';
-import { buildEmbed, errorEmbed } from '@/api/embed.js';
-import { getGuildSnapshot } from '@/api/guild.js';
-import type { MemberSummary } from '@/api/member.js';
-import { listMembers } from '@/api/member.js';
-import { paginate } from '@/api/paginate.js';
-import type { RoleSummary } from '@/api/role.js';
-import { listRoles } from '@/api/role.js';
-import { chunk } from '@/misc/utility/format.js';
-import type { ModuleHealth } from '@/registry/module-registry.js';
-import { getModuleLogger } from '@/services/logger.js';
-import type {
+  MemberSummary,
+  ModuleHealth,
   NanoCommandInteraction,
   NanoComponentInteraction,
-  NanoModule
-} from '@/types/nano-module.js';
+  NanoModule,
+  Role,
+  RoleSummary,
+  SlashCommandStringOption,
+  SlashCommandSubcommandBuilder
+} from '@ccs-devhub/nano-core';
+import {
+  buildEmbed,
+  buttonRow,
+  chunk,
+  errorEmbed,
+  getGuildSnapshot,
+  getModuleLogger,
+  listMembers,
+  listRoles,
+  paginate,
+  SlashCommandBuilder
+} from '@ccs-devhub/nano-core';
 
 /**
  * synapse — the junction that fires signals through the core's body.

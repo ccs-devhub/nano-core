@@ -1,13 +1,15 @@
 import type {
   ChatInputCommandInteraction,
+  NanoModule,
+  NanoTheme,
   SlashCommandStringOption
-} from 'discord.js';
-import { SlashCommandBuilder } from 'discord.js';
-
-import { buildEmbed } from '@/api/embed.js';
-import type { NanoTheme } from '@/api/theme.js';
-import { listThemes, registerTheme } from '@/api/theme.js';
-import type { NanoModule } from '@/types/nano-module.js';
+} from '@ccs-devhub/nano-core';
+import {
+  buildEmbed,
+  listThemes,
+  registerTheme,
+  SlashCommandBuilder
+} from '@ccs-devhub/nano-core';
 
 /**
  * Example module (any license welcome — this one is MIT). Shows the

@@ -57,11 +57,11 @@ export default MODULE;
 
 ## What modules import
 
-From `@ccs-devhub/nano-core` (inside this repo: the `@/` aliases):
+From `@ccs-devhub/nano-core` — always the package name, never `@/` aliases in module code (tsconfig maps the package name to `src/lib/index.ts`, so it resolves for bundled and store-installed modules alike):
 
 | Need | Import |
 |---|---|
-| Server data (plain ids -> JSON) | `getGuildSnapshot`, `listChannels`, `listRoles`, `listMembers`, `sendMessage`, ... from `@/api/*` |
+| Server data (plain ids -> JSON) | `getGuildSnapshot`, `listChannels`, `listRoles`, `listMembers`, `sendMessage`, ... |
 | Styled embeds | `buildEmbed(spec, theme?)`, `successEmbed/errorEmbed/infoEmbed`; register palettes with `registerTheme` in `onEnable` |
 | Components | `buttonRow`, `selectRow`, `buildModal`, `confirmRow` (auto module:action ids), `paginate(interaction, pages)` |
 | Services at runtime | `interaction.client.services` — cooldowns, scheduler, cache (`.namespace(name)`), lifecycle (`getHealth`), database |
