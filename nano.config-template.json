@@ -1,0 +1,25 @@
+{
+  "bot": {
+    "name": "nano-bot"
+  },
+  "intents": [
+    "Guilds"
+  ],
+  "modules": [
+    "./modules/embed-styler",
+    "./modules/synapse"
+  ],
+  "disabled": [],
+  "database": {
+    "driver": "sqlite"
+  },
+  "logging": {
+    "level": "info",
+    "pretty": true
+  },
+  "store": {
+    "registry_url": "https://raw.githubusercontent.com/ccs-devhub/nano-store/main/registry.json",
+    "cache_ttl_hours": 24
+  },
+  "module_config": {}
+}

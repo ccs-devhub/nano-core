@@ -49,3 +49,10 @@ coverage/
 coverage/
 out/
 public/build/
+
+# =====================
+# NANO-CORE RUNTIME STATE
+# =====================
+data/
+.nano/
+nano.config.json

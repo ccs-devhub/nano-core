@@ -1,0 +1,25 @@
+{
+  "title": "synapse settings",
+  "fields": [
+    {
+      "key": "page_size",
+      "label": "Scan page size",
+      "type": "number",
+      "default": 12,
+      "help": "Entries per embed page in scan/roles/members output."
+    },
+    {
+      "key": "theme",
+      "label": "Embed theme",
+      "type": "select",
+      "options": ["nano", "midnight"],
+      "default": "nano"
+    },
+    {
+      "key": "log_member_flow",
+      "label": "Log member joins/leaves",
+      "type": "boolean",
+      "default": true
+    }
+  ]
+}

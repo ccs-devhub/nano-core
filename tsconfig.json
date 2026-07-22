@@ -4,6 +4,7 @@
         "target": "ES2022",
         "module": "NodeNext",
         "moduleResolution": "NodeNext",
+        "jsx": "react-jsx",
         "outDir": "dist",
         "rootDir": "src",
         "strict": true,
@@ -16,7 +17,12 @@
             "@/constants/*": ["src/lib/constants/*"],
             "@/commands/*": ["src/core/commands/*"],
             "@/events/*": ["src/core/events/*"],
-            "@/snippets/*": ["src/lib/snippets/*"]
+            "@/snippets/*": ["src/lib/snippets/*"],
+            "@/api/*": ["src/lib/api/*"],
+            "@/registry/*": ["src/lib/registry/*"],
+            "@/services/*": ["src/lib/services/*"],
+            "@/store/*": ["src/lib/store/*"],
+            "@/types/*": ["src/lib/types/*"]
         },
         "types": [
             "node"
@@ -24,7 +30,8 @@
     },
     "include": [
         "src",
-        "tests"
+        "tests",
+        "modules"
     ],
     "exclude": [
         "dist"

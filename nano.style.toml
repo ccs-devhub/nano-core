@@ -1,0 +1,32 @@
+# nano-core styling — single source of truth for colors, palettes,
+# logo artwork, and layout thresholds used by the boot banner and the
+# TUI window. Colors are hex (#RRGGBB or #RGB); classic terminal color
+# names (magenta, cyan, ...) are also accepted.
+
+[palette]
+primary = "#C678DD"     # frames, logo, brand accents
+accent = "#B4A7E5"      # keys, labels, hints (soft lavender)
+success = "#A6DA95"     # active selections, ok states
+error = "#ED8796"
+warning = "#EED49F"
+
+[logo]
+# Artwork files, relative to the project root. `path` is what the
+# banner and TUI render; keep `full_path` for the original piece.
+path = ".github/logo-nano-core-small.txt"
+full_path = ".github/logo-nano-core.txt"
+color = "#C678DD"
+# Hard cap applied when rendering (longer lines are truncated).
+max_width = 40
+
+[banner]
+# Below this many terminal columns the banner stacks logo above info.
+side_by_side_min_columns = 84
+key_width = 11
+rule_width = 24
+
+[tui]
+border_style = "round"
+# Dashboard shows the logo only when the terminal is at least this big.
+logo_min_rows = 26
+logo_min_columns = 84

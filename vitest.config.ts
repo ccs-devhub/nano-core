@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [tsconfig_paths()],
   test: {
     environment: 'node',
-    include: ['tests/**/*.test.ts'],
+    include: ['tests/**/*.test.{ts,tsx}'],
     coverage: {
       provider: 'v8',
     },

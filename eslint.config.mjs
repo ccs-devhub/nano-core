@@ -68,7 +68,7 @@ export default defineConfig([
     ignores: ['dist/**', 'node_modules/**', '.cache/**'],
   },
   {
-    files: ['**/*.{js,ts,mjs,cjs,mts,cts}'],
+    files: ['**/*.{js,ts,tsx,mjs,cjs,mts,cts}'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
@@ -95,9 +95,14 @@ export default defineConfig([
             ['@', path.resolve(__dirname, 'src')],
             ['@/misc', path.resolve(__dirname, 'src/lib/misc')],
             ['@/constants', path.resolve(__dirname, 'src/lib/constants')],
-            ['@/commands', path.resolve(__dirname, 'src/lib/commands')],
-            ['@/events', path.resolve(__dirname, 'src/lib/events')],
+            ['@/commands', path.resolve(__dirname, 'src/core/commands')],
+            ['@/events', path.resolve(__dirname, 'src/core/events')],
             ['@/snippets', path.resolve(__dirname, 'src/lib/snippets')],
+            ['@/api', path.resolve(__dirname, 'src/lib/api')],
+            ['@/registry', path.resolve(__dirname, 'src/lib/registry')],
+            ['@/services', path.resolve(__dirname, 'src/lib/services')],
+            ['@/store', path.resolve(__dirname, 'src/lib/store')],
+            ['@/types', path.resolve(__dirname, 'src/lib/types')],
           ],
           extensions: ['.js', '.ts', '.mjs', '.cjs', '.mts', '.cts'],
         },
@@ -281,6 +286,54 @@ export default defineConfig([
           ],
         },
       ],
+    },
+  },
+  {
+    /* React/Ink TUI subtree: components are PascalCase by JSX law and
+       inline callbacks rely on inference, so the global casing matrix
+       and parameter typedefs are relaxed here (and only here). */
+    files: ['src/tui/**/*.{ts,tsx}', 'tests/**/*.tsx'],
+    rules: {
+      '@typescript-eslint/naming-convention': [
+        'error',
+        {
+          selector: 'default',
+          format: ['snake_case', 'camelCase', 'PascalCase', 'UPPER_CASE'],
+          leadingUnderscore: 'allow',
+        },
+        { selector: 'typeLike', format: ['PascalCase'] },
+        {
+          selector: ['property', 'typeProperty', 'objectLiteralProperty'],
+          format: null,
+        },
+      ],
+      '@typescript-eslint/typedef': 'off',
+      'padding-line-between-statements': 'off',
+      /* fullscreen-ink ships an exports map the legacy alias resolver
+         cannot read; TS resolves it fine. */
+      'import/no-unresolved': ['error', { ignore: ['fullscreen-ink'] }],
+      'import/no-duplicates': 'off',
+      'import/default': 'off',
+      'import/export': 'off',
+      'import/named': 'off',
+      'import/namespace': 'off',
+      'import/no-named-as-default': 'off',
+      'import/no-named-as-default-member': 'off',
+    },
+  },
+  {
+    /* Tool config files import packages whose exports maps crash the
+       static import resolver (e.g. vite-tsconfig-paths -> tsconfck). */
+    files: ['**/*.config.{js,ts,mjs,cjs,mts,cts}'],
+    rules: {
+      'import/default': 'off',
+      'import/export': 'off',
+      'import/named': 'off',
+      'import/namespace': 'off',
+      'import/no-duplicates': 'off',
+      'import/no-named-as-default': 'off',
+      'import/no-named-as-default-member': 'off',
+      'import/no-unresolved': 'off',
     },
   },
   {

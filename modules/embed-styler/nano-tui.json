@@ -1,0 +1,25 @@
+{
+  "title": "embed-styler settings",
+  "fields": [
+    {
+      "key": "default_theme",
+      "label": "Default theme",
+      "type": "select",
+      "options": ["midnight", "nano"],
+      "default": "midnight",
+      "help": "Theme used when /embed is called without one."
+    },
+    {
+      "key": "footer_text",
+      "label": "Footer text",
+      "type": "text",
+      "default": "nano-core / embed-styler"
+    },
+    {
+      "key": "timestamp",
+      "label": "Add timestamps",
+      "type": "boolean",
+      "default": true
+    }
+  ]
+}
