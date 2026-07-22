@@ -1,0 +1,43 @@
+#+TITLE: Rule: Code Conventions (law for every nano-core contribution)
+
+* Purpose
+  One place stating the non-negotiable conventions ESLint enforces, so
+  humans and AI agents write compliant code on the first pass.
+
+* The casing matrix (@typescript-eslint/naming-convention)
+  - Functions and methods: =camelCase= (=loadConfig=, =getModuleLogger=).
+  - Constants: =UPPER_CASE= (=const CONFIG = ...=) UNLESS the name has an
+    embedded underscore-lowercase tail (=entry_path=) or a leading
+    underscore (=_entry=, loop variables) — those stay snake/free.
+  - Variables and parameters: =snake_case= (=module_name=, =guild_id=).
+  - Types, interfaces, classes: =PascalCase=. Filenames: =kebab-case=.
+  - EXCEPTION: =src/tui/**= relaxes casing (React components are
+    PascalCase by JSX law) and parameter typedefs. Only there.
+
+* Structural rules
+  - Explicit return types and typed parameters EVERYWHERE (including
+    arrow callbacks: =(role: Role): string =>=). Arrow bodies always use
+    braces + =return= (=arrow-body-style: always=).
+  - No =console.*= — =process.stdout.write= in CLI paths, the pino logger
+    (=@/services/logger.js=) everywhere else.
+  - No parent-relative imports (=../=) — use the =@/= aliases (tsconfig
+    paths: =@/api=, =@/registry=, =@/services=, =@/store=, =@/types=, =@/misc=,
+    =@/constants=; =@/*= covers =src/*=). NodeNext: import specifiers end
+    in =.js= even for TS files.
+  - Max line 80; two-space indent; single quotes; magic numbers get a
+    named =const=.
+  - No emojis anywhere: code, docs, commits, output.
+
+* API design law
+  - Every fallible operation returns =NanoResult<T>= (=@/types/nano-result.js=)
+    — ={ok: true, data} | {ok: false, error}=. Never throw across a
+    public API boundary; =runSafe()= wraps the try/catch.
+  - Public surfaces speak plain JSON (ids in, summary objects out) so
+    AI/MCP consumers can call them without discord.js knowledge.
+  - Core provides CONNECTIONS, not features: no moderation, leveling,
+    economy, dashboards, translations, entity caches, or REST queues
+    (discord.js already rate-limits and caches).
+
+* Verification
+  =npm run lint= must exit 0 problems; =npm run build= (tsc strict) and
+  =npx vitest run= must pass before any work is called done.

@@ -49,16 +49,95 @@ Modules and extensions may use any license. Please include a LICENSE file or hea
 This model ensures a free software core and respects diverse contributions, following CCS principles of user autonomy, collaboration, and learning.
 #+end_quote
 
-#+begin_comment
 * Getting Started
-1. Clone or fork this repository.
-2. Set up your own bot (see [[./docs/SETUP.org]] for quick start).
-3. Inject new features by downloading modules or adding them to the appropriate folder.
-4. Modify, extend, or remove functionality as you wish.
+  This section is the quickstart; the complete reference for every
+  command, configuration key, and service is
+  [[file:docs/MANUAL.org][the manual]].
+
+  Requirements: Node.js >= 20 and a bot application created in the
+  [[https://discord.com/developers/applications][Discord Developer Portal]].
+
+  1. Clone and install:
+     #+begin_src shell
+     git clone https://github.com/ccs-devhub/nano-core.git
+     cd nano-core && npm install
+     #+end_src
+  2. Secrets (environment only, never JSON):
+     #+begin_src shell
+     cp .env-template .env
+     # DISCORD_TOKEN: portal > Bot > Reset Token
+     # CLIENT_ID:     portal > General Information > Application ID
+     #+end_src
+  3. Configure the bot — open the configuration window or edit
+     =nano.config.json= directly:
+     #+begin_src shell
+     cp nano.config-template.json nano.config.json
+     npm run ui    # Dashboard / Config / Modules / Store / Logs
+     #+end_src
+     In =Config= set the bot name, the =dev_guild_id= (your test
+     server: slash commands appear instantly there), intents,
+     database, and logging. Colors, palette, and the banner/window
+     logo live in =nano.style.toml=.
+  4. Invite the bot to your server: portal > OAuth2 > URL Generator
+     with the =bot= + =applications.commands= scopes and whatever
+     permissions your bot needs.
+
+* Verify everything works
+  #+begin_src shell
+  npm run doctor
+  #+end_src
+  Checks every layer without logging the bot in: Node version, valid
+  config, secrets present, token authenticating against the Discord
+  API, database, nano-store reachability, module loading, and intents
+  (warns about privileged ones you must enable in the portal).
+
+  With everything green, run it and test in Discord:
+  #+begin_src shell
+  npm run dev
+  #+end_src
+  =/synapse vitals= (core + module health), =/synapse scan= (full
+  server snapshot), =/module list= (module states).
+
+  Core development gates: =npm run lint=, =npm run build=,
+  =npm run test=.
+
+* Managing modules
+  #+begin_src shell
+  npm run module -- search             # validated catalog (nano-store)
+  npm run module -- install <name>     # exact reviewed version, pinned
+  npm run module -- add ./modules/x    # your own local module
+  npm run module -- add <npm-pkg> --allow-external   # UNREVIEWED: at your own risk
+  npm run module -- enable|disable <name>
+  npm run module -- outdated           # newer validated versions
+  npm run module -- list
+  #+end_src
+  After enabling or disabling modules, run =/module sync= in Discord
+  to refresh the slash commands. The full module-authoring guide is in
+  [[file:docs/MODULE-SPEC.org][MODULE-SPEC]] and the core laws in
+  [[file:docs/rules/][docs/rules/]].
+
+* Documentation
+  All documentation ships with the repository:
+  - [[file:docs/MANUAL.org][MANUAL]] — the complete reference: every
+    command (=doctor=, =dev=, =ui=, =module=), every key of
+    =nano.config.json= and =nano.style.toml=, the TUI, the store, the
+    Discord commands, and the services available to module authors.
+  - [[file:docs/MODULE-SPEC.org][MODULE-SPEC]] — the full NanoModule
+    contract, with =modules/synapse/= as the reference
+    implementation.
+  - [[file:docs/rules/][docs/rules/]] — the laws of each subsystem
+    (conventions, services, dispatcher, store, TUI, module
+    authoring).
+  - [[https://github.com/ccs-devhub/nano-store][nano-store]] — the
+    curated registry and its submission process (SUBMISSIONS.md).
 
 * Community & Contributing
-nano-core is *community-driven*. Anyone can contribute core improvements (under MPL v2.0) or modules (under their chosen license). Share your modules, help others learn, and join discussions—see [[https://github.com/ccs-devhub]] for CCS resources and how to participate.
-#+end_comment
+  nano-core is *community-driven*. Anyone can contribute core
+  improvements (under MPL v2.0) or modules (under any license they
+  choose). Validated modules are published to
+  [[https://github.com/ccs-devhub/nano-store][nano-store]] via pull
+  request. Share your modules, help others learn, and join the
+  discussions at [[https://github.com/ccs-devhub][CCS]].
 
 * Final Invitation
 Don't settle for generic bots and wasted resources—build the *most customizable, modular Discord bot* tailored to your needs, with the CCS community supporting your journey. *You* define your bot’s features, licensing, and destiny.

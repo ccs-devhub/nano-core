@@ -1,0 +1,73 @@
+#+TITLE: Rule: TUI (src/tui/, Ink v6)
+
+* Purpose
+  The opencode-style configuration window (=npm run ui=): Dashboard,
+  Config, Modules, Store, Logs + per-module panels. It is a CONFIG
+  SURFACE — the bot process runs separately (=npm run dev=).
+
+* Stack decisions (locked with the owner)
+  Ink v6 + @inkjs/ui + fullscreen-ink on Node >= 20. OpenTUI was
+  rejected (needs Bun / Node 26 experimental FFI); Go Bubble Tea was
+  rejected (second toolchain). @clack/prompts renders the non-TTY
+  fallback. React stays QUARANTINED here: the bot runtime never
+  imports anything from =src/tui/=.
+
+* Design language (minimal/futuristic, opencode-inspired)
+  ONE outer frame (the app shell draws it; =tui.border_style= from
+  nano.style.toml). Interior is borderless: sections are an accent
+  =▍= bar + lowercase title (the =Window= component), the sidebar is a
+  dim right-rule column, the status line is a single dim row. Status
+  glyphs: =●= success/error (=StatusDot=), =○= idle, braille =Spinner=
+  for loaders. Views: dashboard, config, modules, store, commands,
+  run, logs (+ help via =?=, module-panel via enter).
+
+* Architecture
+  - =index.tsx= entry: TTY guard -> =withFullScreen(<App/>)=; non-TTY
+    prints a clack summary.
+  - =router.tsx= context (view + params), =app.tsx= shell (sidebar |
+    content | status bar), global keys 1-5/q gated by the
+    =UiStateProvider= editing flag so typing in a field never
+    navigates or quits.
+  - =components/form.tsx= renders =FormFieldSpec[]= (j/k, enter
+    edit/toggle/cycle, s save) — the SAME renderer serves the Config
+    view and module panels.
+  - Config view writes =nano.config.json=; secrets NEVER: tokens are
+    env-only and the view says so.
+
+* Module panels (the security rule)
+  A module ships =nano-tui.json= next to its entry: ={title?, fields:
+  [{key, label, type: text|secret|number|boolean|select, options?,
+  default?, help?}]}= — validated by =NANO_TUI_MANIFEST_SCHEMA=
+  (=@/types/nano-tui.js=), rendered by Form, persisted under
+  =module_config.<name>= in nano.config.json. NO module code ever
+  executes in the TUI process. Panels are data, not scripts.
+
+* Styling (nano.style.toml)
+  ALL colors, palettes, logo artwork paths, logo max width, and layout
+  thresholds live in =nano.style.toml= at the project root, loaded and
+  zod-validated by =@/registry/nano-style.js= (=getStyle=,
+  =getLogoLines=, =ansiColor=; cached, =resetStyleCache= for tests).
+  The boot banner (=@/misc/utility/banner.js=) and every TUI component
+  read from it — never hardcode a color or threshold. The small logo
+  (=.github/logo-nano-core-small.txt=, 18x35, density-downscaled from
+  the original) is the default artwork; the embedded fallback in
+  =@/constants/logo.js= covers npm installs that ship only dist/.
+
+* Conventions delta
+  =src/tui/**= relaxes the casing matrix (PascalCase components),
+  parameter typedefs, and the import-plugin export-map rules
+  (fullscreen-ink exports break the legacy resolver). Everything else
+  (80 cols, single quotes, no emojis, return types) still applies.
+
+* The Run view (in-TUI task runner)
+  =views/run.tsx= + =state/runner.ts=: doctor and store-sync run
+  in-process; lint/build/test spawn their real commands
+  (=runCommand=: spawn, ANSI-stripped line streaming, bounded 200-line
+  log, exit-code -> =●= state, elapsed seconds). Doctor renders its
+  =DoctorCheck[]= as a glyph checklist. One task at a time; enter
+  starts, output streams into the =output= section under a spinner.
+
+* Verification
+  =npx vitest run tests/tui.test.tsx= (ink-testing-library frames +
+  stdin simulation); manual: =npm run ui= in a real terminal;
+  =npm run ui </dev/null= exercises the fallback.

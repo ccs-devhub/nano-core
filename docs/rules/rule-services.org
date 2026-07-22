@@ -1,0 +1,51 @@
+#+TITLE: Rule: Core Services Layer (src/lib/services/)
+
+* Purpose
+  The bot's organs. One file per service, wired once in =src/index.ts=
+  and exposed to modules as =client.services= (see
+  =@/types/nano-services.js=).
+
+* The services and their contracts
+  - =lifecycle.ts= — =LifecycleManager=: stable lifecycle names
+    (=ready=, =error=, =warn=, =invalidated=, =shard-*=, =rate-limited=) over
+    discord.js events (insulates modules from v15 renames);
+    =login= (bounded retries), =shutdown= (LIFO tasks then
+    =client.destroy()=), =installSignalHandlers= (SIGINT/SIGTERM once),
+    =getHealth(registry)=. INVARIANT: after =invalidated=, restart the
+    process — never re-login the same client.
+  - =logger.ts= — pino. =createLogger(config.logging)= once at boot;
+    modules use =getModuleLogger(module_id)= (child logger). Optional
+    =logging.file= feeds the TUI Logs view.
+  - =scheduler.ts= — =NanoScheduler= (croner): =scheduleCron=,
+    =scheduleOnce= (optionally =persistent= via the database adapter),
+    =rearmPersistedJobs= at boot resolving handlers from each module's
+    =tasks= map. Jobs are keyed =module:name=; =cancelModuleJobs= on
+    module removal.
+  - =cooldown.ts= — =CooldownManager=: token bucket per
+    user/guild/channel/global scope over lru-cache. Declared on the
+    command (=cooldown: {scope, delay_ms, limit}=), registered by the
+    registry, consumed by the dispatcher. NEVER for REST throttling —
+    @discordjs/rest queues 429s itself.
+  - =permission.ts= — =botHasPermissions=, =userHasPermissions= (report
+    =missing[]=), =checkRoleHierarchy= (manageable/kickable/bannable).
+  - =cache.ts= — =NanoCache= (lru): namespaced =get/set/getOrCompute=,
+    =namespace(module_id)= scoped view. For module-computed data ONLY —
+    discord.js managers already cache entities.
+  - =database.ts= — =DatabaseService=: better-sqlite3 + Drizzle (WAL,
+    default =data/nano.db=), PostgreSQL is an honest config seam (not
+    bundled). Modules own tables (=mod_<name>_*=) and migrations
+    (=runModuleMigrations= with per-module journal
+    =__migrations_<module>=). NEVER auto-drop module tables —
+    =purgeModuleData= is explicit and owner-invoked.
+  - =errors.ts= — =installProcessGuards= (unhandledRejection log;
+    uncaughtException log + graceful exit), =replyWithError= (the ONLY
+    correct replied/deferred followUp-vs-reply guard — always use it),
+    =wrapExecute(module_id, fn)= isolation.
+
+* Extension points
+  New service = new file here + wire in =src/index.ts= + add to
+  =NanoServices= + export from the barrel (=src/lib/index.ts=) + a test
+  file in =tests/=.
+
+* Verification
+  =npx vitest run tests/{cooldown,scheduler,database,errors,cache-format}.test.ts=

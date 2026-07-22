@@ -1,0 +1,47 @@
+#+TITLE: Rule: Kernel Dispatcher and Interaction Routing
+
+* Purpose
+  ONE gateway listener routes every interaction
+  (=src/core/kernel/events/interaction-create.ts=). Modules never bind
+  their own =interactionCreate= listener.
+
+* Routing table
+  - Slash + context menu commands: looked up in =client.commands=,
+    gated by module enabled state, cooldown consumed, optional
+    immediate defer (=command.defer: true | 'ephemeral'= — the handler
+    must then use =editReply=/=followUp=), errors answered via
+    =replyWithError=.
+  - Autocomplete: =command.autocomplete(interaction)=; must =respond()=
+    within 3 seconds and NEVER =reply()=; failures respond =[]=.
+  - Buttons, all select menus, modals: customId convention
+    =module:action:...args= (=buildCustomId=/=parseCustomId= in
+    =@/misc/utility/custom-id.js=, 100-char limit enforced at build).
+    Routed to the owning module's =components[action]= handler.
+    Non-conventional ids stay SILENT (collectors manage their own).
+
+* Command registration (REST synchronizer)
+  =syncCommands= (=@/misc/utility/command-sync.js=) ALWAYS diffs against
+  the deployed set before PUT (Discord caps 200 global creates/day).
+  Guild scope (=bot.dev_guild_id=) registers instantly for development;
+  global takes up to an hour. =/module sync= re-registers after
+  enable/disable. Registration NEVER runs on =clientReady=.
+
+* Kernel module
+  The =nano= kernel (dispatcher + =/module= manager + ready log) is
+  registered PROTECTED: it cannot be disabled or removed. The =core=
+  module (folder-scanned =src/core/commands|events=) can.
+
+* Intents
+  Events declare =intents: ['GuildMembers']= on the NanoEvent;
+  =deriveIntents= unions them with config BEFORE the Client is built
+  and warns loudly about privileged ones (GuildMembers, GuildPresences,
+  MessageContent also need the developer-portal toggle).
+
+* Pitfalls this design prevents
+  Duplicate listeners on reload (registry stores disposers), the 3s ack
+  window (defer), double-reply crashes (=replyWithError= guard), daily
+  REST caps (diffing), silent missing intents (derivation + warning).
+
+* Verification
+  =npx vitest run tests/dispatcher.test.ts= plus a smoke boot
+  (=timeout 30 npx tsx src/index.ts= without a token).

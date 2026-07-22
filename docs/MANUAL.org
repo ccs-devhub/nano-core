@@ -1,0 +1,231 @@
+#+TITLE: The nano-core Manual
+#+AUTHOR: Cristian D. Moreno - Kyonax (Cyber Code Syndicate)
+#+OPTIONS: toc:t num:t H:3
+#+LANGUAGE: en
+
+This manual documents every user-facing part of nano-core: what it
+does, how to invoke it, and what each option means. It is the
+reference; the [[file:../README.org][README]] is the quickstart.
+
+* Overview
+  nano-core is a modular core for Discord bots built on discord.js
+  v14. The core provides only general infrastructure — client
+  lifecycle, command/event loading, an interaction dispatcher,
+  services (database, scheduler, cooldowns, cache, logging,
+  permissions), a curated module store, a CLI, and a terminal UI.
+  All product behavior comes from installable modules.
+
+  Interfaces:
+  | =npm run dev=    | start the bot                         |
+  | =npm run ui=     | the terminal UI (configuration)       |
+  | =npm run doctor= | verify every layer without logging in |
+  | =npm run module= | the module manager CLI                |
+  | =/module=, ...   | Discord slash commands                |
+
+* Installation
+  Requirements: Node.js >= 20 and a Discord application
+  (https://discord.com/developers/applications).
+
+  1. =git clone https://github.com/ccs-devhub/nano-core.git && cd nano-core=
+  2. =npm install=
+  3. =cp .env-template .env= and fill:
+     - =DISCORD_TOKEN= — portal > Bot > Reset Token.
+     - =CLIENT_ID= — portal > General Information > Application ID.
+  4. =cp nano.config-template.json nano.config.json= — the local
+     config is untracked; edit it by hand, via the CLI, or in the
+     TUI Config view.
+  5. Invite the bot: portal > OAuth2 > URL Generator, scopes =bot= +
+     =applications.commands=, plus the permissions your modules need.
+  6. =npm run doctor= until every check is green, then =npm run dev=.
+
+* Configuration
+** nano.config.json
+   All non-secret configuration. Untracked (per-machine); start from
+   =nano.config-template.json=. Edited by hand, by the CLI, or by
+   the TUI Config view. Every key:
+
+   | Key                     | Type            | Default          | Meaning                                                        |
+   |-------------------------+-----------------+------------------+----------------------------------------------------------------|
+   | =bot.name=              | string          | =nano-bot=       | Display name used by the banner and TUI                        |
+   | =bot.dev_guild_id=      | string?         | unset            | When set, slash commands register in this guild only (instant); unset = global (up to 1 h) |
+   | =intents=               | string[]        | =["Guilds"]=     | Gateway intents by name; module event declarations are added automatically |
+   | =modules=               | (string\vert{}object)[] | =[]=     | Module entries: local paths, npm names, or provenance objects written by the installer |
+   | =disabled=              | string[]        | =[]=             | Module names switched off (kept installed)                     |
+   | =database.driver=       | =sqlite=\vert{}=postgres= | =sqlite= | Storage engine. postgres is a documented seam, not bundled     |
+   | =database.url=          | string?         | =data/nano.db=   | SQLite file path (or connection string for postgres)           |
+   | =logging.level=         | string          | =info=           | pino level: trace, debug, info, warn, error, fatal             |
+   | =logging.pretty=        | boolean         | =false=          | Colored human logs (recommended in development)                |
+   | =logging.file=          | string?         | unset            | Also write logs to this file; feeds the TUI Logs view          |
+   | =logging.module_levels= | object?         | unset            | Per-module level overrides, e.g. ={"synapse": "debug"}=        |
+   | =store.registry_url=    | string          | nano-store raw URL | Registry the store commands and TUI resolve against          |
+   | =store.cache_ttl_hours= | number          | =24=             | Registry cache lifetime (=.nano/store-cache.json=)             |
+   | =module_config.<name>=  | object          | ={}=             | Per-module settings; written by TUI module panels              |
+
+   Secrets are never stored here: =DISCORD_TOKEN= and =CLIENT_ID= come
+   from the environment (=.env=).
+
+   Getting a guild id for =bot.dev_guild_id=: in Discord, User
+   Settings > Advanced > enable Developer Mode, then right-click your
+   server's icon > Copy Server ID. Use your test server while
+   developing (commands appear instantly there); clear the field for
+   production so commands register globally (propagation takes up to
+   an hour and global creations are capped at 200/day).
+
+** nano.style.toml
+   All colors, artwork, and layout thresholds for the banner and TUI.
+
+   | Key                              | Default                             | Meaning                                             |
+   |----------------------------------+-------------------------------------+-----------------------------------------------------|
+   | =palette.primary=                | =#C678DD=                           | Frames, logo, brand accents (hex or terminal name)  |
+   | =palette.accent=                 | =#B4A7E5=                           | Keys, labels, hints                                 |
+   | =palette.success= / =error= / =warning= | =#A6DA95= / =#ED8796= / =#EED49F= | Status colors                                 |
+   | =logo.path=                      | =.github/logo-nano-core-small.txt=  | Artwork rendered by banner and TUI                  |
+   | =logo.full_path=                 | =.github/logo-nano-core.txt=        | The original piece (kept for reference)             |
+   | =logo.color=                     | =#C678DD=                           | Logo color                                          |
+   | =logo.max_width=                 | =40=                                | Rendering cap; longer lines are cut                 |
+   | =banner.side_by_side_min_columns= | =84=                               | Below this width the banner stacks                  |
+   | =banner.key_width= / =rule_width= | =11= / =24=                        | Info column layout                                  |
+   | =tui.border_style=               | =round=                             | Outer frame: single, double, round, bold, classic   |
+   | =tui.logo_min_rows= / =logo_min_columns= | =26= / =84=                 | Dashboard shows the logo only above these sizes     |
+
+* The doctor
+  =npm run doctor= checks each layer without connecting the gateway
+  and exits non-zero when anything fails:
+
+  | Check         | Verifies                                                       |
+  |---------------+----------------------------------------------------------------|
+  | =node=        | Node.js >= 20                                                  |
+  | =config=      | nano.config.json parses against the schema                    |
+  | =secrets=     | DISCORD_TOKEN and CLIENT_ID present in the environment        |
+  | =discord-api= | The token authenticates (GET /users/@me)                      |
+  | =database=    | The configured database opens                                  |
+  | =store=       | The registry is reachable (or served from cache)              |
+  | =modules=     | Every configured module entry imports                         |
+  | =intents=     | The derived intent set; flags privileged ones                  |
+
+* Running the bot
+  =npm run dev= (tsx) or =npm run build && npm start= (compiled).
+  Boot order: banner, module registration lines, intent warnings,
+  command sync (diffed — unchanged sets are never re-registered),
+  login. =SIGINT=/=SIGTERM= shut down gracefully (scheduler stopped,
+  database closed, client destroyed). If Discord invalidates the
+  session, restart the process; the bot never re-logs-in on a dead
+  client.
+
+* The terminal UI
+  =npm run ui=. Requires a TTY; non-interactive shells get a plain
+  summary. Views (keys =1=-=8=, or =h=/=l= to cycle):
+
+  | View          | Purpose and keys                                                   |
+  |---------------+--------------------------------------------------------------------|
+  | =1 dashboard= | Config summary, token state, signature                            |
+  | =2 bot=       | Start/stop/restart the bot: =s= start, =x= stop, =r= restart; live console below; a colored dot in the sidebar shows it is running |
+  | =3 config=    | Edit nano.config.json: =j/k= field, =enter= edit/toggle/cycle, =s= save |
+  | =4 modules=   | =space= enable/disable, =enter= opens the module's settings panel |
+  | =5 store=     | Browse the registry: =enter= install, =r= refresh                 |
+  | =6 commands=  | Every slash command with module, subcommands, cooldown, defer     |
+  | =7 run=       | Execute doctor, store sync, lint, build, test with live colored output |
+  | =8 logs=      | Log file history: =j/k= line, =u/d= half page, =g/G= ends, =r= reload |
+  | =?=           | Help: keys, commands, maintainers                                  |
+  | =q=           | Quit                                                               |
+
+  The Bot view runs the same process as =npm run dev= (banner
+  skipped). The child is terminated when the TUI exits.
+
+  Config saves write nano.config.json immediately; the running bot
+  reads it on its next start. Module panels are declarative
+  (=nano-tui.json= shipped by the module) — module code never runs
+  inside the UI process.
+
+* The module CLI
+  =npm run module -- <command>=:
+
+  | Command                        | Effect                                                        |
+  |--------------------------------+---------------------------------------------------------------|
+  | =doctor=                       | Same checks as =npm run doctor=                               |
+  | =install <name>=               | Install a store module at its exact validated version        |
+  | =add ./modules/x=              | Register a local module folder                                |
+  | =add <npm-pkg> --allow-external= | Install an UNREVIEWED npm module after the risk warning     |
+  | =search [text]=                | Browse the store (name, description, tags)                    |
+  | =outdated=                     | Compare installed versions against the registry               |
+  | =update <name>=                | Re-install at the current validated version                   |
+  | =remove <entry>=               | Unregister (and npm uninstall when applicable)                |
+  | =enable= / =disable <name>=    | Persisted module state                                        |
+  | =list=                         | Entries with provenance and state                             |
+  | =--refresh=                    | Bypass the 24 h registry cache                                |
+
+* Discord commands
+  | Command                                  | Access        | Effect                                        |
+  |------------------------------------------+---------------+-----------------------------------------------|
+  | =/module list=                           | Administrator | Modules with version, origin, state           |
+  | =/module enable= / =disable <name>=      | Administrator | Toggle at runtime (persisted)                 |
+  | =/module health [name]=                  | Administrator | healthy / degraded / down / disabled          |
+  | =/module sync=                           | Administrator | Re-register slash commands after toggling     |
+  | =/synapse scan=                          | everyone      | Full server snapshot, paginated               |
+  | =/synapse roles= / =members= / =channels= | everyone     | Server data (members needs the GuildMembers intent) |
+  | =/synapse vitals=                        | everyone      | Core health: ping, uptime, module reports     |
+  | =/synapse echo <text>=                   | everyone      | Roundtrip test with latency                   |
+  | =/embed <title> <description> [theme]=   | everyone      | Themed embed (embed-styler module)            |
+  | =/ping=, =/server=, =/user=              | everyone      | Core utility commands                         |
+
+* Modules
+  A module is a default-exported object with =name=, =version=, and
+  any of: =commands=, =events= (with declared =intents=),
+  =components= (customId routing =module:action:args=), =tasks=
+  (persistent scheduler handlers), =onEnable=/=onDisable=,
+  =healthCheck=, and a =nano-tui.json= settings panel. The complete
+  contract with examples is [[file:MODULE-SPEC.org][MODULE-SPEC]]; the
+  reference implementation is =modules/synapse/=. Modules may use any
+  license. Disabled modules stay installed but their commands,
+  events, components, and tasks are gated off.
+
+* The store
+  The registry is one curated =registry.json= in
+  https://github.com/ccs-devhub/nano-store. An entry vouches for ONE
+  exact version, reviewed on its =validated_at= date. Installs are
+  pinned (npm version or git tag, optional commit SHA verification)
+  and recorded with provenance in nano.config.json. Anything not in
+  the registry is an external install: it requires
+  =--allow-external= after a warning that names the real risk
+  (module code runs with the bot's token, guilds, filesystem, and
+  network) and is tagged unreviewed. Submissions are pull requests —
+  see SUBMISSIONS.md in the store repository.
+
+* Services (for module authors)
+  Everything importable from the core (in-repo: =@/= aliases). All
+  fallible calls return =NanoResult<T>= (={ok, data | error}=) and
+  speak plain ids/JSON.
+
+  | Service       | Key functions                                                          |
+  |---------------+-------------------------------------------------------------------------|
+  | api/guild     | =getGuildSnapshot=, =listGuilds=, =getGuild=                            |
+  | api/channel   | =listChannels=, =createChannel=, =editChannel=, =deleteChannel=         |
+  | api/role      | =listRoles=, =createRole=, =editRole=, =addRoleToMember=                |
+  | api/member    | =getMember=, =listMembers=, =kickMember=, =banMember=, =timeoutMember=  |
+  | api/message   | =sendMessage=, =editMessage=, =bulkDeleteMessages=, =pinMessage=        |
+  | api/embed     | =buildEmbed(spec, theme?)=, =successEmbed=, =errorEmbed=, =infoEmbed=   |
+  | api/theme     | =registerTheme= (call in =onEnable=), =getTheme=, =listThemes=          |
+  | api/component | =buttonRow=, =selectRow=, =buildModal=, =confirmRow=, =paginate=        |
+  | lifecycle     | =getHealth=, =onLifecycle(event, fn)=, =addShutdownTask=                |
+  | logger        | =getModuleLogger(name)= — child logger with per-module levels           |
+  | scheduler     | =scheduleCron=, =scheduleOnce= (=persistent: true= survives restarts)   |
+  | cooldown      | declared per command: ={scope, delay_ms, limit}=                        |
+  | permission    | =botHasPermissions=, =userHasPermissions=, =checkRoleHierarchy=         |
+  | cache         | =client.services.cache.namespace(name)= — scoped get/set/getOrCompute   |
+  | database      | =getDb= (Drizzle), =runModuleMigrations= — tables prefixed =mod_<name>_*= |
+  | errors        | =replyWithError=, =wrapExecute= — never crash the bot from a module     |
+
+  At runtime modules reach services via =client.services= and the
+  registry via =client.nano=.
+
+* Development
+  Gates: =npm run lint= (0 problems), =npm run build= (strict tsc),
+  =npm run test= (vitest). Layout: =src/core= (kernel + drop-in
+  commands/events), =src/lib= (services, registry, api, store,
+  types), =src/tui=, =src/cli=, =modules/= (in-repo modules),
+  =tests/=. Subsystem laws live in [[file:rules/][docs/rules/]];
+  =npx tsx tests/tui-preview.tsx [key]= renders TUI frames headlessly
+  for design checks.
+
+* License
+  Core: MPL-2.0. Modules: any license, declared per module.

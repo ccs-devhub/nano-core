@@ -1,0 +1,116 @@
+#+TITLE: nano-core Module Specification
+#+AUTHOR: Cyber Code Syndicate (CCS)
+#+OPTIONS: toc:t num:nil
+
+* What is a module?
+  A module is a plain object (the file's default export) that bundles
+  slash commands, gateway event listeners, lifecycle hooks, and an
+  optional health check. The core is MPL-2.0; modules may use *any
+  license* (declare it in the =license= field and your repo).
+
+* The contract
+  #+begin_src typescript
+  import type { NanoModule } from '@ccs-devhub/nano-core';
+
+  const MODULE: NanoModule = {
+    name: 'my-module',          // unique, kebab-case
+    version: '0.1.0',
+    description: 'What it does.',
+    license: 'MIT',
+    commands: [{
+      data: /* SlashCommandBuilder */ undefined as never,
+      cooldown: { scope: 'user', delay_ms: 5000, limit: 2 }, // optional
+      defer: true,              // optional: dispatcher defers; use editReply
+      async execute(interaction) {},
+      async autocomplete(interaction) {},  // optional; respond() in <3s
+    }],
+    events: [{
+      name: 'guildMemberAdd',
+      intents: ['GuildMembers'],  // declared intents derive the Client set
+      execute(...args) {},
+    }],
+    components: {               // button/select/modal handlers routed by
+      rescan(interaction, args) {},  // customIds `my-module:rescan:...args`
+    },
+    tasks: {                    // named handlers for persistent one-shots
+      remind(payload) {},
+    },
+    onEnable(bot) {},           // runs on registration (if enabled) and /module enable
+    onDisable(bot) {},          // runs on /module disable and removal
+    healthCheck(bot) {          // optional; feeds /module health
+      return { status: 'healthy' };  // healthy | degraded | down
+    },
+  };
+
+  export default MODULE;
+  #+end_src
+
+  A =nano-tui.json= next to the entry file adds a declarative settings
+  panel to the TUI (fields only, never code — see
+  [[file:rules/rule-tui.org][rule-tui]]). The living reference
+  implementation is =modules/synapse/=.
+
+  Detailed laws live in [[file:rules/][docs/rules/]]:
+  [[file:rules/rule-conventions.org][conventions]] ·
+  [[file:rules/rule-services.org][services]] ·
+  [[file:rules/rule-dispatcher.org][dispatcher]] ·
+  [[file:rules/rule-store.org][store]] ·
+  [[file:rules/rule-tui.org][tui]] ·
+  [[file:rules/rule-module-authoring.org][module authoring]].
+
+* Core utilities available to modules
+  Everything is imported from =@ccs-devhub/nano-core= (inside this repo,
+  via the =@/= aliases). All API helpers take plain ids, return
+  =NanoResult<T>= envelopes (={ ok, data | error }=), and produce
+  JSON-friendly summaries — deliberately easy to expose to an AI or MCP
+  tool layer.
+
+  - =guild=: =listGuilds=, =getGuild=, =getGuildSnapshot= (full server map:
+    channels + roles + counts)
+  - =channel=: =listChannels=, =getChannel=, =createChannel=, =editChannel=,
+    =deleteChannel=
+  - =role=: =listRoles=, =getRole=, =createRole=, =editRole=, =deleteRole=,
+    =addRoleToMember=, =removeRoleFromMember=
+  - =member=: =getMember=, =listMembers=, =kickMember=, =banMember=,
+    =unbanMember=, =timeoutMember=, =setNickname=
+  - =message=: =sendMessage=, =editMessage=, =deleteMessage=,
+    =bulkDeleteMessages=, =fetchMessages=, =pinMessage=, =unpinMessage=,
+    =reactToMessage=
+  - =embed / theme=: =buildEmbed(spec, theme?)=, =registerTheme=,
+    =getTheme=, =listThemes= — style modules register palettes on
+    =onEnable=.
+
+* Installing and managing modules
+  #+begin_src shell
+  # one-command install (npm package or local path)
+  npm run module -- add @scope/nano-module-x
+  npm run module -- add ./modules/my-local-module
+
+  # manage
+  npm run module -- list
+  npm run module -- disable my-module
+  npm run module -- enable my-module
+  npm run module -- remove @scope/nano-module-x
+  #+end_src
+
+  Entries live in =nano.config.json= (=modules= array; npm package names
+  or local paths). Runtime management is also available in Discord via
+  =/module list|enable|disable|health|sync= (administrator only). After
+  enabling or disabling, run =/module sync= to update the registered
+  slash commands.
+
+* Rules the registry enforces
+  - Module names and command names must be unique; duplicate commands
+    are skipped with a warning.
+  - Disabled modules keep their listeners bound but gated: events do
+    not fire and commands answer with a disabled notice.
+  - The =nano= kernel module (dispatcher, =/module= manager) is protected
+    and can never be disabled or removed.
+  - A module that fails to import is logged and skipped; it never
+    prevents the bot from starting.
+
+* Gateway intents
+  Declare the intents your module needs in the host bot's
+  =nano.config.json= (=intents= array, e.g. ="GuildMessages"=,
+  ="GuildMembers"=). Privileged intents also need to be switched on in
+  the Discord developer portal. =Guilds= is always included.

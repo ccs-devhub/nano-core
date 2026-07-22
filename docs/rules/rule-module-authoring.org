@@ -1,0 +1,44 @@
+#+TITLE: Rule: Module Authoring (the NanoModule contract)
+
+* Purpose
+  Everything a module can plug into. =modules/synapse/index.ts= is the
+  living reference implementation — copy it.
+
+* The contract (@/types/nano-module.js)
+  Default-export a plain object:
+  - =name= (unique kebab), =version=, =description?=, =license?= (ANY
+    license — declare it).
+  - =commands?: NanoCommand[]= — ={data: SlashCommandBuilder, execute}=
+    plus optional =cooldown: {scope, delay_ms, limit}=, =defer: true |
+    'ephemeral'= (then use editReply), =autocomplete(interaction)=.
+  - =events?: NanoEvent[]= — ={name, once?, intents?, execute}=;
+    declare the gateway intents each listener needs — the core derives
+    the Client intent set from them.
+  - =components?: Record<action, handler>= — button/select/modal
+    handlers routed by =module:action:args= customIds (build them with
+    =buildCustomId= or the =buttonRow=/=selectRow=/=buildModal= sugar).
+  - =tasks?: Record<name, handler>= — named handlers so persistent
+    scheduler one-shots re-arm after a restart.
+  - =tui?= manifest is discovered as =nano-tui.json= next to the entry
+    file (see rule-tui.org).
+  - =onEnable(bot)= / =onDisable(bot)= lifecycle; =healthCheck(bot)=
+    feeding =/module health= (healthy | degraded | down).
+
+* What modules use
+  Import from =@ccs-devhub/nano-core= (in-repo: the =@/= aliases): the
+  plain-ids API layer (guild/channel/role/member/message), embeds +
+  themes (=registerTheme= in =onEnable=), =paginate=, component sugar,
+  and =client.services= (cooldowns, scheduler, cache, lifecycle,
+  database). Database: prefix tables =mod_<name>_*=, ship Drizzle
+  migrations, register them via =runModuleMigrations=.
+
+* Rules the registry enforces
+  Unique module and command names (duplicates skipped with a warning);
+  disabled modules keep listeners bound but gated; a module that fails
+  to import is logged and skipped, never fatal; the =nano= kernel is
+  protected.
+
+* Distribution
+  Local folder (=./modules/x=) for development; npm package or GitHub
+  repo for release; store validation via a nano-store PR
+  (SUBMISSIONS.md checklist). After enable/disable, =/module sync=.

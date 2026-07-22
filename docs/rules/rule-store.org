@@ -1,0 +1,44 @@
+#+TITLE: Rule: Module Store (nano-store) and Install Flows
+
+* Purpose
+  MELPA-style curation with Obsidian-style mechanics: ONE
+  =registry.json= in the =ccs-devhub/nano-store= repo lists only
+  owner-validated modules. =module install <name>= resolves it the way
+  =package-install= resolves MELPA.
+
+* Registry contract (see nano-store/registry.schema.json)
+  Entry fields: =name= (kebab, unique), =description=, =author=,
+  =license=, =source= (=npm= | =github=), =package= or =repo=, =version=
+  (exact reviewed version), optional =commit= SHA pin, =min_core=,
+  =tags=, =validated_at=. PR = submission; merge by the owner =
+  validated; entry removal = kill switch.
+
+* Client behavior (src/lib/store/)
+  - =StoreClient.getRegistry=: fetch the raw URL
+    (=store.registry_url= in nano.config.json), cache 24h at
+    =.nano/store-cache.json=, =--refresh= bypasses, stale cache serves
+    when offline. zod-validated.
+  - =installFromStore=: resolve exact name (near-miss suggestions),
+    gate on =min_core= vs =NANO_VERSION=, then
+    =npm install pkg@version= or =git clone --depth 1 --branch v<version>=
+    into =modules/<name>= (commit pin verified, mismatch aborts).
+    Provenance recorded in nano.config.json:
+    ={name, source: 'store', spec, version, installed_at, trusted: true}=.
+  - Bare-string entries stay valid (backward compatible).
+
+* The external path (trust boundary)
+  Anything NOT in the store is EXTERNAL: =module add <spec>= refuses
+  npm specs until =--allow-external= confirms the risk warning
+  (=EXTERNAL_RISK_WARNING= in installer.ts — the wording names real
+  capabilities: token, guilds, filesystem, network). Recorded
+  =trusted: false=; =module list= and the TUI tag it UNREVIEWED. Local
+  paths (=./modules/x=) are the developer's own code: no warning.
+
+* Updates
+  =module outdated= diffs installed provenance vs registry (vanished
+  entries report "removed from store"); =module update <name>=
+  re-installs the current validated version. NEVER auto-update.
+
+* Verification
+  =npx vitest run tests/store.test.ts=; CLI:
+  =npm run module -- search=, =-- add something --allow-external=.
