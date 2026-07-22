@@ -1,6 +1,6 @@
 {
   "name": "@ccs-devhub/nano-core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Lightweight, free-software modular core for Discord bots, designed for simple injection of commands and features, with a strong focus on adaptability and community-driven collaboration.",
   "author": {
     "name": "Cyber Code Syndicate (CCS)",
