@@ -1,5 +1,5 @@
 import { execSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { NANO_VERSION } from '@/constants/nano.js';
@@ -252,9 +252,49 @@ function installSource(
     }
 
     exec(`mv ${STAGING} ${TARGET}`);
+    installModuleDependencies(TARGET, exec, root);
     return ok(`./${TARGET}`);
   } catch (error: unknown) {
     return err(error);
+  }
+}
+
+/**
+ * Install a cloned module's own npm dependencies. Never fatal: the
+ * module stays installed and the loader reports a clear import error
+ * if a dependency is missing. `--ignore-scripts` keeps dependency
+ * lifecycle scripts from executing during install.
+ */
+function installModuleDependencies(
+  target: string,
+  exec: (command: string) => string,
+  root: string
+): void {
+  const MANIFEST_PATH = resolve(root, target, 'package.json');
+
+  if (!existsSync(MANIFEST_PATH)) {
+    return;
+  }
+
+  try {
+    const RAW: unknown = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'));
+    const DEPENDENCIES =
+      (RAW as { dependencies?: Record<string, string> }).dependencies ?? {};
+
+    if (!Object.keys(DEPENDENCIES).length) {
+      return;
+    }
+
+    exec(
+      `npm install --prefix ${target} --omit=dev --ignore-scripts ` +
+      '--no-audit --no-fund'
+    );
+  } catch (error: unknown) {
+    process.stdout.write(
+      `[WARN] Could not install dependencies for '${target}': ` +
+      `${String(error)}. Run 'npm install --omit=dev --ignore-scripts' ` +
+      `inside ${target} manually.\n`
+    );
   }
 }
 

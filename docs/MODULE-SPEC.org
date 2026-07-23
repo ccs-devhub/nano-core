@@ -101,6 +101,18 @@
   enabling or disabling, run =/module sync= to update the registered
   slash commands.
 
+** Module dependencies
+   A module may declare its own npm =dependencies= in its
+   =package.json= (nano-core >= 0.2.1). The store installer runs
+   =npm install --omit=dev --ignore-scripts= inside the module folder
+   after a github install or update, so imports resolve from the
+   module's own =node_modules= (Node walks up from the module file).
+   If that install fails the module is kept and a warning explains the
+   manual command. npm-sourced modules get dependencies from npm
+   itself. Keep dependencies minimal — module code runs with full bot
+   privileges, and =--ignore-scripts= means packages needing install
+   scripts will not work.
+
 * Rules the registry enforces
   - Module names and command names must be unique; duplicate commands
     are skipped with a warning.
