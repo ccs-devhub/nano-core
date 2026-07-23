@@ -116,6 +116,47 @@ This model ensures a free software core and respects diverse contributions, foll
   [[file:docs/MODULE-SPEC.org][MODULE-SPEC]] and the core laws in
   [[file:docs/rules/][docs/rules/]].
 
+* The MCP bridge (drive the bot from an AI)
+  The bundled =mcp= module runs a
+  [[https://modelcontextprotocol.io][Model Context Protocol]] server
+  inside the bot process, so AI clients (Claude Code, agents,
+  editors) can operate the bot as tools: guild snapshots, channel and
+  role listings, health vitals, recent messages — and, only when you
+  explicitly allow it, sending messages and moderation.
+
+  1. Create the access token (once):
+     #+begin_src shell
+     echo "NANO_MCP_TOKEN=$(openssl rand -hex 32)" >> .env
+     #+end_src
+  2. Make sure =./modules/mcp= is in the =modules= list of
+     =nano.config.json= (the Modules window of =npm run ui= does this
+     too), then start the bot:
+     #+begin_src shell
+     npm run dev
+     #+end_src
+     The log shows
+     =MCP endpoint listening on http://127.0.0.1:3777/mcp=.
+  3. Connect a client. The repo ships =.mcp.json=, so Claude Code
+     picks the server up automatically — it only needs the token in
+     the shell it starts from:
+     #+begin_src shell
+     export NANO_MCP_TOKEN=$(grep '^NANO_MCP_TOKEN=' .env | cut -d= -f2)
+     claude
+     #+end_src
+     Inside the session, =/mcp= should show =nano-core= connected.
+     Then just ask: "what guilds is the bot in", "snapshot my
+     server", "is the bot healthy". Any other MCP client works with
+     the same URL plus the =Authorization: Bearer= header.
+
+  The endpoint is loopback-only and answers nothing without the
+  token. Write tools (=send_message=, channel/role edits) and
+  moderation tools (kick/ban/timeout) are OFF by default; enable them
+  per bot with =allow_write= / =allow_moderation= in the =mcp= panel
+  of the TUI (restart afterwards). Ungated tools are never even
+  visible to clients. Check the endpoint from Discord with =/mcp=
+  (administrator only). Full reference:
+  [[file:docs/MANUAL.org][MANUAL]], "The MCP bridge".
+
 * Documentation
   All documentation ships with the repository:
   - [[file:docs/MANUAL.org][MANUAL]] — the complete reference: every

@@ -180,6 +180,48 @@ Este modelo asegura un core de software libre y respeta contribuciones diversas,
   modules esta en [[file:docs/MODULE-SPEC.org][MODULE-SPEC]] y las
   leyes del core en [[file:docs/rules/][docs/rules/]].
 
+* El puente MCP (maneja el bot desde una IA)
+  El module =mcp= (incluido) corre un servidor de
+  [[https://modelcontextprotocol.io][Model Context Protocol]] dentro
+  del proceso del bot, para que clientes de IA (Claude Code, agentes,
+  editores) operen el bot como tools: snapshots del server, listados
+  de canales y roles, salud, mensajes recientes — y, solo si lo
+  permites explicitamente, envio de mensajes y moderacion.
+
+  1. Crea el token de acceso (una sola vez):
+     #+begin_src shell
+     echo "NANO_MCP_TOKEN=$(openssl rand -hex 32)" >> .env
+     #+end_src
+  2. Verifica que =./modules/mcp= este en la lista =modules= de
+     =nano.config.json= (la ventana Modules de =npm run ui= tambien
+     sirve) y arranca el bot:
+     #+begin_src shell
+     npm run dev
+     #+end_src
+     El log muestra
+     =MCP endpoint listening on http://127.0.0.1:3777/mcp=.
+  3. Conecta un cliente. El repo incluye =.mcp.json=, asi que Claude
+     Code detecta el servidor automaticamente — solo necesita el
+     token en la shell desde la que arranca:
+     #+begin_src shell
+     export NANO_MCP_TOKEN=$(grep '^NANO_MCP_TOKEN=' .env | cut -d= -f2)
+     claude
+     #+end_src
+     Dentro de la sesion, =/mcp= debe mostrar =nano-core= conectado.
+     Despues solo pregunta: "en que servers esta el bot", "hazme un
+     snapshot de mi server", "esta sano el bot". Cualquier otro
+     cliente MCP funciona con la misma URL mas el header
+     =Authorization: Bearer=.
+
+  El endpoint solo escucha en loopback y no responde nada sin el
+  token. Las tools de escritura (=send_message=, editar
+  canales/roles) y de moderacion (kick/ban/timeout) vienen APAGADAS;
+  se activan por bot con =allow_write= / =allow_moderation= en el
+  panel =mcp= de la TUI (reinicia despues). Las tools sin permiso ni
+  siquiera son visibles para los clientes. Revisa el endpoint desde
+  Discord con =/mcp= (solo administradores). Referencia completa:
+  [[file:docs/MANUAL.org][MANUAL]], "The MCP bridge".
+
 * Documentacion
   Toda la documentacion es parte del repositorio:
   - [[file:docs/MANUAL.org][MANUAL]] — la referencia completa: cada
