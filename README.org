@@ -184,8 +184,9 @@ Este modelo asegura un core de software libre y respeta contribuciones diversas,
   Toda la documentacion es parte del repositorio:
   - [[file:docs/MANUAL.org][MANUAL]] — la referencia completa: cada
     comando (=doctor=, =dev=, =ui=, =module=), cada clave de
-    =nano.config.json= y =nano.style.toml=, la TUI, el store, los
-    Discord commands y los servicios para autores de modules.
+    =nano.config.json= y =nano.style.toml=, la TUI, el store, el
+    puente MCP, los Discord commands y los servicios para autores de
+    modules.
   - [[file:docs/MODULE-SPEC.org][MODULE-SPEC]] — el contrato completo
     de un NanoModule, con =modules/synapse/= como implementacion de
     referencia.

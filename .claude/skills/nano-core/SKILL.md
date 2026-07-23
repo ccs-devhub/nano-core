@@ -8,8 +8,9 @@ description: >-
   product features live in installable NanoModules. Use for ANY work in
   this repo: writing or reviewing core code, authoring or fixing a
   NanoModule (commands, events, components, tasks, cooldowns, intents,
-  healthCheck, nano-tui.json panels), the synapse or embed-styler
-  modules, the nano-store curated registry and install flows, the Ink
+  healthCheck, nano-tui.json panels), the synapse, embed-styler, or
+  mcp modules, the MCP bridge and its tools (driving the live bot from
+  an AI session), the nano-store curated registry and install flows, the Ink
   v6 TUI (views, Form, module panels), core services (lifecycle,
   logger, scheduler, cooldown, permission, cache, database, errors),
   the kernel dispatcher and customId routing, command REST sync,
@@ -48,6 +49,7 @@ everywhere).
 | Creating or editing a module (commands/events/components/tasks/health/panels), synapse, embed-styler | `rules/module-authoring.md` |
 | The nano-store registry, install/update flows, trust model, CLI module commands | `rules/store-registry.md` |
 | The Ink TUI: views, Form, ToggleList, nano-tui.json panels, TTY fallback | `rules/tui.md` |
+| Live-bot questions or actions (guilds, channels, vitals, messages), the mcp module, .mcp.json, NANO_MCP_TOKEN | `rules/mcp.md` |
 
 ## Quick Reference
 
@@ -58,3 +60,4 @@ everywhere).
 | `module-authoring` | The complete NanoModule contract with every optional surface, the synapse reference, discovery/loading, registry enforcement, distribution paths. |
 | `store-registry` | registry.json schema, StoreClient caching, installFromStore pinning, external risk warning, outdated/update, nano-store repo layout. |
 | `tui` | Ink v6 stack decisions, view/component structure, the declarative panel security rule, conventions delta for src/tui. |
+| `mcp` | The MCP bridge: when to drive the live bot via MCP tools instead of reading code, preconditions and troubleshooting, the gated tool surface, token and loopback security laws. |

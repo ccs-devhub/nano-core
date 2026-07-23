@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "nano-core": {
+      "type": "http",
+      "url": "http://127.0.0.1:3777/mcp",
+      "headers": {
+        "Authorization": "Bearer ${NANO_MCP_TOKEN}"
+      }
+    }
+  }
+}

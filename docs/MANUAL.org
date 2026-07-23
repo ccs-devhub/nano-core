@@ -191,6 +191,31 @@ reference; the [[file:../README.org][README]] is the quickstart.
   network) and is tagged unreviewed. Submissions are pull requests —
   see SUBMISSIONS.md in the store repository.
 
+* The MCP bridge
+  The =mcp= module runs a Model Context Protocol server inside the
+  bot process, so MCP clients (Claude Code, agents, editors) can
+  drive the NanoResult API layer as tools: guild snapshots, channel
+  and role listings, vitals, and — only when gated on — writes and
+  moderation.
+
+  - Endpoint: =http://127.0.0.1:3777/mcp= (Streamable HTTP,
+    loopback only, stateless POST). The port lives in
+    =module_config.mcp.port=; restart after changing it.
+  - Auth: =NANO_MCP_TOKEN= in =.env= (generate with
+    =openssl rand -hex 32=). Requests without the matching
+    =Authorization: Bearer= header get 401. Without the variable the
+    endpoint stays down and module health reports degraded.
+  - Gates: =module_config.mcp.allow_write= registers message,
+    channel, role, and nickname tools; =allow_moderation= registers
+    kick/ban/timeout tools. Both default off — ungated clients never
+    even see those tools in =tools/list=.
+  - Client wiring: the repo ships =.mcp.json= pointing Claude Code at
+    the endpoint with the env-expanded bearer token. Export
+    =NANO_MCP_TOKEN= in the shell running Claude Code.
+  - Status: the =/mcp= Discord command (administrator only) shows
+    endpoint state, port, tool count, and gates; =module health= in
+    the TUI Modules view reports the same.
+
 * Services (for module authors)
   Everything importable from the core (in-repo: =@/= aliases). All
   fallible calls return =NanoResult<T>= (={ok, data | error}=) and

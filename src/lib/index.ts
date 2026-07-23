@@ -53,6 +53,7 @@ export {
   hyperlink,
   inlineCode,
   italic,
+  PermissionFlagsBits,
   roleMention,
   SlashCommandBuilder,
   time,

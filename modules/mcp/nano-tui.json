@@ -1,0 +1,26 @@
+{
+  "title": "mcp settings",
+  "fields": [
+    {
+      "key": "port",
+      "label": "Endpoint port",
+      "type": "number",
+      "default": 3777,
+      "help": "Loopback port for http://127.0.0.1:<port>/mcp. Restart the bot after changing."
+    },
+    {
+      "key": "allow_write",
+      "label": "Allow write tools",
+      "type": "boolean",
+      "default": false,
+      "help": "Registers message/channel/role write tools. Off means clients never see them."
+    },
+    {
+      "key": "allow_moderation",
+      "label": "Allow moderation tools",
+      "type": "boolean",
+      "default": false,
+      "help": "Registers kick/ban/timeout tools. Keep off unless an agent must moderate."
+    }
+  ]
+}

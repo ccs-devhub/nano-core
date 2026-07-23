@@ -8,7 +8,7 @@ class MockClient {
       callback.call(this);
     }
   }
-  login(token: string | undefined): Promise<void> {
+  login(token: string | undefined): Promise<boolean> {
     return Promise.resolve(token === 'FAKE_TOKEN');
   }
   user?: { tag: string };
@@ -19,7 +19,7 @@ describe('Discord bot', (): void => {
     const WRITE_SPY = vi.spyOn(process.stdout, 'write');
 
     const BOT = new MockClient();
-    BOT.once('ready', function (): void {
+    BOT.once('ready', function (this: MockClient): void {
       process.stdout.write(`Logged in as ${this.user?.tag}\n`);
     });
 

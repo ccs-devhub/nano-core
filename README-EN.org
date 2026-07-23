@@ -121,7 +121,8 @@ This model ensures a free software core and respects diverse contributions, foll
   - [[file:docs/MANUAL.org][MANUAL]] — the complete reference: every
     command (=doctor=, =dev=, =ui=, =module=), every key of
     =nano.config.json= and =nano.style.toml=, the TUI, the store, the
-    Discord commands, and the services available to module authors.
+    MCP bridge, the Discord commands, and the services available to
+    module authors.
   - [[file:docs/MODULE-SPEC.org][MODULE-SPEC]] — the full NanoModule
     contract, with =modules/synapse/= as the reference
     implementation.
