@@ -1,5 +1,7 @@
 import { execSync } from 'node:child_process';
 
+import { auditCommands, deleteAllCommands, syncCommands } from
+  '@/misc/utility/command-sync.js';
 import type { ModuleEntry } from '@/registry/nano-config.js';
 import {
   loadConfig,
@@ -10,7 +12,8 @@ import {
 } from '@/registry/nano-config.js';
 import { ansiColor, getStyle } from '@/registry/nano-style.js';
 import type { DoctorCheck } from '@/services/doctor.js';
-import { runDoctor } from '@/services/doctor.js';
+import { collectCommandDefinitions, runDoctor } from
+  '@/services/doctor.js';
 import type { OutdatedModule } from '@/store/installer.js';
 import {
   installExternal,
@@ -32,6 +35,8 @@ const USAGE = `Usage: npm run module -- <command> [target] [flags]
 
 Commands:
   doctor               Check every layer the bot depends on
+  commands             Audit slash-command registration: local
+                       definitions vs the guild and global scopes
   install <name>       Install a validated module from the nano-store
   add <spec>           Add a local path (./modules/x) or external npm
                        package (unreviewed externals need
@@ -47,6 +52,8 @@ Commands:
 Flags:
   --refresh            Bypass the store cache
   --allow-external     Confirm the unreviewed-module risk warning
+  --sync               (commands) Force re-register the active scope
+  --clean-global       (commands) Delete every global command
 `;
 
 function createStore(): StoreClient {
@@ -106,8 +113,10 @@ async function searchCommand(text?: string): Promise<void> {
   }
 
   for (const _module of RESULT.data) {
+    const KIND_TAG = _module.kind ? ` [${_module.kind}]` : '';
     process.stdout.write(
-      `  ${_module.name}@${_module.version} — ${_module.description} ` +
+      `  ${_module.name}@${_module.version}${KIND_TAG} — ` +
+      `${_module.description} ` +
       `(by ${_module.author}, validated ${_module.validated_at})\n`
     );
   }
@@ -228,6 +237,120 @@ async function doctorCommand(): Promise<void> {
   }
 }
 
+async function commandsCommand(flags: string[]): Promise<void> {
+  const STYLE = getStyle();
+  const CONFIG = loadConfig();
+  const TOKEN = process.env.DISCORD_TOKEN;
+  const CLIENT_ID = process.env.CLIENT_ID;
+
+  if (!TOKEN || !CLIENT_ID) {
+    process.stdout.write(
+      '[ERROR] DISCORD_TOKEN and CLIENT_ID must be set (.env).\n'
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  const LOCAL = await collectCommandDefinitions(CONFIG);
+  const OPTIONS = {
+    token: TOKEN,
+    client_id: CLIENT_ID,
+    guild_id: CONFIG.bot.dev_guild_id,
+  };
+
+  if (flags.includes('--clean-global')) {
+    const CLEANED = await deleteAllCommands({
+      token: TOKEN,
+      client_id: CLIENT_ID,
+    });
+
+    if (!CLEANED.ok) {
+      process.stdout.write(`[ERROR] ${CLEANED.error}\n`);
+      process.exitCode = 1;
+      return;
+    }
+    process.stdout.write(
+      ':: Global scope cleared — guild commands are untouched.\n'
+    );
+  }
+
+  if (flags.includes('--sync')) {
+    const SYNCED = await syncCommands(LOCAL, { ...OPTIONS, force: true });
+
+    if (!SYNCED.ok) {
+      process.stdout.write(`[ERROR] ${SYNCED.error}\n`);
+      process.exitCode = 1;
+      return;
+    }
+    process.stdout.write(
+      `:: Registered ${SYNCED.data.count} command(s) ` +
+      `(${SYNCED.data.scope} scope).\n`
+    );
+  }
+
+  const AUDIT = await auditCommands(LOCAL, OPTIONS);
+
+  if (!AUDIT.ok) {
+    process.stdout.write(`[ERROR] ${AUDIT.error}\n`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const REPORT = AUDIT.data;
+  const GOOD = paint(ansiColor(STYLE.palette.success), '●');
+  const BAD = paint(ansiColor(STYLE.palette.error), '●');
+  const SCOPE_LABEL = REPORT.scope === 'guild'
+    ? `guild ${CONFIG.bot.dev_guild_id}`
+    : 'global';
+  const ISSUES = [
+    REPORT.missing.length > 0
+      ? `missing: ${REPORT.missing.join(', ')}`
+      : null,
+    REPORT.extra.length > 0
+      ? `stale: ${REPORT.extra.join(', ')}`
+      : null,
+  ].filter(Boolean);
+  process.stdout.write(
+    `\n${paint(ANSI_BOLD + ansiColor(STYLE.palette.primary),
+      '▍ slash commands')}\n\n`
+  );
+  process.stdout.write(
+    `  · ${'scope'.padEnd(NAME_COLUMN)} ` +
+    `${paint(ANSI_DIM, SCOPE_LABEL)}\n`
+  );
+  process.stdout.write(
+    `  · ${'local'.padEnd(NAME_COLUMN)} ` +
+    `${paint(ANSI_DIM,
+      `${REPORT.local.length} — ${REPORT.local.join(', ')}`)}\n`
+  );
+  let registered_detail = `${REPORT.registered.length} — in sync`;
+
+  if (!REPORT.in_sync) {
+    registered_detail = ISSUES.length > 0
+      ? ISSUES.join('; ')
+      : 'definitions drifted — re-register with --sync';
+  }
+
+  process.stdout.write(
+    `  ${REPORT.in_sync ? GOOD : BAD} ` +
+    `${'registered'.padEnd(NAME_COLUMN)} ` +
+    `${paint(ANSI_DIM, registered_detail)}\n`
+  );
+
+  if (REPORT.scope === 'guild') {
+    const STALE = REPORT.stale_global;
+    process.stdout.write(
+      `  ${STALE.length === 0 ? GOOD : BAD} ` +
+      `${'global'.padEnd(NAME_COLUMN)} ` +
+      `${paint(ANSI_DIM, STALE.length === 0
+        ? 'clean — no stale global commands'
+        : `${STALE.length} stale: ${STALE.join(', ')} — remove with ` +
+          '--clean-global')}\n`
+    );
+  }
+  process.stdout.write('\n');
+}
+
 function listCommand(): void {
   const CONFIG = loadConfig();
 
@@ -266,6 +389,11 @@ async function main(): Promise<void> {
 
   if (COMMAND === 'doctor') {
     await doctorCommand();
+    return;
+  }
+
+  if (COMMAND === 'commands') {
+    await commandsCommand(FLAGS);
     return;
   }
 

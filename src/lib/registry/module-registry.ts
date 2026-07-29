@@ -8,6 +8,7 @@ import type {
   NanoModule,
   NanoTaskHandler
 } from '@/types/nano-module.js';
+import { moduleKind } from '@/types/nano-module.js';
 import type { NanoResult } from '@/types/nano-result.js';
 import { err, ok } from '@/types/nano-result.js';
 
@@ -87,7 +88,7 @@ export class ModuleRegistry {
     const STATE = ENABLED ? '' : ', disabled';
     const LABEL = `${module.name}@${module.version}`;
     process.stdout.write(
-      `  · module ${LABEL} (${origin}${STATE})\n`
+      `  · module ${LABEL} (${origin}, ${moduleKind(module)}${STATE})\n`
     );
     return ok(module.name);
   }

@@ -11,12 +11,13 @@ import {
 
 import type { EmbedFieldSpec } from '@/api/embed.js';
 import { buildEmbed } from '@/api/embed.js';
-import { registerGlobalCommands } from
-  '@/misc/utility/register-global-commands.js';
+import { syncCommands } from '@/misc/utility/command-sync.js';
 import type {
   ModuleHealth,
   RegisteredModule
 } from '@/registry/module-registry.js';
+import { loadConfig } from '@/registry/nano-config.js';
+import { moduleKind } from '@/types/nano-module.js';
 
 const MAX_EMBED_FIELDS = 25;
 
@@ -110,7 +111,8 @@ async function handleList(
       return {
         name: `${entry.module.name}@${entry.module.version}`,
         value: `${entry.module.description ?? 'No description.'}\n` +
-          `State: ${STATE} (${entry.origin}${PROTECTED_MARK})`,
+          `State: ${STATE} (${entry.origin}, ` +
+          `${moduleKind(entry.module)}${PROTECTED_MARK})`,
       };
     });
 
@@ -198,13 +200,20 @@ async function handleSync(
 
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-  const RESULT = await registerGlobalCommands(
+  /* Same scope as boot: guild while bot.dev_guild_id is set. A sync
+   * that ignored the scope would leak every command globally. */
+  const RESULT = await syncCommands(
     interaction.client.nano.enabledCommands(),
-    TOKEN,
-    CLIENT_ID
+    {
+      token: TOKEN,
+      client_id: CLIENT_ID,
+      guild_id: loadConfig().bot.dev_guild_id,
+      force: true,
+    }
   );
   const CONTENT = RESULT.ok
-    ? `Registered ${RESULT.data} slash command(s).`
+    ? `Registered ${RESULT.data.count} slash command(s) ` +
+      `(${RESULT.data.scope} scope).`
     : `Sync failed: ${RESULT.error}`;
 
   await interaction.editReply({ content: CONTENT });

@@ -59,6 +59,13 @@ export type NanoTaskHandler = (payload?: unknown) => Promise<void> | void;
 
 export type NanoHealthStatus = 'healthy' | 'degraded' | 'down' | 'disabled';
 
+/**
+ * What a module contributes to the bot. An `extension` adds core
+ * capability without any slash command (e.g. the mcp bridge), a
+ * `command` module only ships commands, and a `hybrid` does both.
+ */
+export type NanoModuleKind = 'extension' | 'command' | 'hybrid';
+
 export interface NanoHealthReport {
   status: NanoHealthStatus;
   details?: string;
@@ -75,6 +82,8 @@ export interface NanoModule {
   version: string;
   description?: string;
   license?: string;
+  /** Declared kind; derived from the contents when omitted. */
+  kind?: NanoModuleKind;
   commands?: NanoCommand[];
   events?: NanoEvent[];
   /** Component handlers keyed by action (customId `module:action`). */
@@ -86,6 +95,30 @@ export interface NanoModule {
   onEnable?(bot: Client): Promise<void> | void;
   onDisable?(bot: Client): Promise<void> | void;
   healthCheck?(bot: Client): Promise<NanoHealthReport> | NanoHealthReport;
+}
+
+/**
+ * Resolve a module's kind: the declared field wins, otherwise derive
+ * it — commands plus events/tasks make a hybrid, commands alone a
+ * command module, anything else a core extension.
+ */
+export function moduleKind(module: NanoModule): NanoModuleKind {
+  if (module.kind) {
+    return module.kind;
+  }
+
+  const HAS_COMMANDS = (module.commands ?? []).length > 0;
+  const HAS_CORE_HOOKS = (module.events ?? []).length > 0 ||
+    Object.keys(module.tasks ?? {}).length > 0;
+
+  if (HAS_COMMANDS && HAS_CORE_HOOKS) {
+    return 'hybrid';
+  }
+
+  if (HAS_COMMANDS) {
+    return 'command';
+  }
+  return 'extension';
 }
 
 /** Runtime guard used when loading untyped module files. */

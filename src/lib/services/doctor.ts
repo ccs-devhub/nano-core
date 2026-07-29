@@ -1,14 +1,20 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { CONFIG_FILE_NAME } from '@/constants/nano.js';
-import { deriveIntents } from '@/misc/utility/resolve-intents.js';
+import { createKernelModule } from '@/core/kernel/index.js';
+import { auditCommands } from '@/misc/utility/command-sync.js';
+import { deriveIntents, listPortalDisabledIntents } from
+  '@/misc/utility/resolve-intents.js';
 import type { ExternalModule } from '@/registry/module-loader.js';
-import { loadExternalModules } from '@/registry/module-loader.js';
+import { loadCoreModule, loadExternalModules } from
+  '@/registry/module-loader.js';
+import type { NanoConfig } from '@/registry/nano-config.js';
 import { loadConfig, NANO_CONFIG_SCHEMA } from '@/registry/nano-config.js';
 import { DatabaseService } from '@/services/database.js';
 import { StoreClient } from '@/store/store-client.js';
-import type { NanoModule } from '@/types/nano-module.js';
+import type { NanoCommand, NanoModule } from '@/types/nano-module.js';
 
 /**
  * The health check behind `npm run doctor`: verifies every layer a
@@ -30,6 +36,33 @@ export interface DoctorOptions {
 
 const MIN_NODE_MAJOR = 20;
 const DISCORD_API_ME = 'https://discord.com/api/v10/users/@me';
+const SOURCE_ROOT = dirname(dirname(dirname(fileURLToPath(
+  import.meta.url
+))));
+
+/**
+ * Every slash command the bot would register on boot: the kernel, the
+ * core drop-in folder, and each enabled external module — the same set
+ * the composition root hands to syncCommands.
+ */
+export async function collectCommandDefinitions(
+  config: NanoConfig
+): Promise<NanoCommand[]> {
+  const DEFINITIONS: NanoModule[] = [
+    createKernelModule(),
+    await loadCoreModule(SOURCE_ROOT),
+    ...(await loadExternalModules(config)).map(
+      (external: ExternalModule): NanoModule => {
+        return external.module;
+      }
+    ),
+  ];
+  return DEFINITIONS.filter((definition: NanoModule): boolean => {
+    return !config.disabled.includes(definition.name);
+  }).flatMap((definition: NanoModule): NanoCommand[] => {
+    return definition.commands ?? [];
+  });
+}
 
 export async function runDoctor(
   options: DoctorOptions = {}
@@ -175,14 +208,91 @@ export async function runDoctor(
       return external.module;
     })
   );
-  const PRIVILEGED_NOTE = DERIVED.privileged.length > 0
-    ? ` — PRIVILEGED (${DERIVED.privileged.join(', ')}): enable them ` +
-      'in the developer portal.'
-    : '';
+  let intents_ok = true;
+  let privileged_note = '';
+
+  if (DERIVED.privileged.length > 0) {
+    const GENERIC_NOTE =
+      ` — PRIVILEGED (${DERIVED.privileged.join(', ')}): could not ` +
+      'verify the developer-portal toggles.';
+
+    if (TOKEN && !options.skip_network) {
+      const PORTAL = await listPortalDisabledIntents(
+        DERIVED.privileged,
+        TOKEN,
+        FETCH
+      );
+
+      if (PORTAL.ok && PORTAL.data.length === 0) {
+        privileged_note =
+          ` — privileged (${DERIVED.privileged.join(', ')}) enabled ` +
+          'in the developer portal.';
+      } else if (PORTAL.ok) {
+        intents_ok = false;
+        privileged_note =
+          ` — PRIVILEGED (${PORTAL.data.join(', ')}) OFF in the ` +
+          'developer portal: login will fail or their events will ' +
+          'never fire.';
+      } else {
+        privileged_note = GENERIC_NOTE;
+      }
+    } else {
+      privileged_note = GENERIC_NOTE;
+    }
+  }
+
   CHECKS.push({
     name: 'intents',
-    ok: true,
-    detail: `${DERIVED.names.join(', ')}${PRIVILEGED_NOTE}`,
+    ok: intents_ok,
+    detail: `${DERIVED.names.join(', ')}${privileged_note}`,
   });
+
+  /* 9. Slash commands registered in the active scope + stale globals. */
+  if (TOKEN && CLIENT_ID && !options.skip_network) {
+    const LOCAL = await collectCommandDefinitions(CONFIG);
+    const AUDIT = await auditCommands(LOCAL, {
+      token: TOKEN,
+      client_id: CLIENT_ID,
+      guild_id: CONFIG.bot.dev_guild_id,
+      fetch_fn: FETCH,
+    });
+
+    if (!AUDIT.ok) {
+      CHECKS.push({ name: 'commands', ok: false, detail: AUDIT.error });
+    } else {
+      const REPORT = AUDIT.data;
+      const SCOPE_LABEL = REPORT.scope === 'guild'
+        ? `guild ${CONFIG.bot.dev_guild_id}`
+        : 'global';
+      const ISSUES = [
+        REPORT.missing.length > 0
+          ? `missing: ${REPORT.missing.join(', ')}`
+          : null,
+        REPORT.extra.length > 0
+          ? `stale: ${REPORT.extra.join(', ')}`
+          : null,
+      ].filter(Boolean);
+      CHECKS.push({
+        name: 'commands',
+        ok: REPORT.in_sync,
+        detail: REPORT.in_sync
+          ? `${REPORT.local.length} command(s) in sync (${SCOPE_LABEL}).`
+          : `Out of sync (${SCOPE_LABEL}) — ` +
+            `${ISSUES.length > 0 ? ISSUES.join('; ') : 'drifted'} — ` +
+            'start the bot or run: npm run module -- commands --sync',
+      });
+
+      if (REPORT.stale_global.length > 0) {
+        CHECKS.push({
+          name: 'global-scope',
+          ok: false,
+          detail: `${REPORT.stale_global.length} stale global ` +
+            `command(s) (${REPORT.stale_global.join(', ')}) — visible ` +
+            'in EVERY guild and duplicated in the dev guild; clean: ' +
+            'npm run module -- commands --clean-global',
+        });
+      }
+    }
+  }
   return CHECKS;
 }

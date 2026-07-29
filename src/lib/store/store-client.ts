@@ -23,6 +23,7 @@ export const STORE_MODULE_SCHEMA = z.object({
   version: z.string(),
   commit: z.string().optional(),
   min_core: z.string().optional(),
+  kind: z.enum(['extension', 'command', 'hybrid']).optional(),
   tags: z.array(z.string()).optional(),
   validated_at: z.string(),
 });

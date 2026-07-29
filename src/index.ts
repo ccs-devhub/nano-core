@@ -8,7 +8,7 @@ import { NANO_VERSION } from '@/constants/nano.js';
 import { createKernelModule } from '@/core/kernel/index.js';
 import { printBootBanner } from '@/misc/utility/banner.js';
 import { syncCommands } from '@/misc/utility/command-sync.js';
-import { deriveIntents, resolveIntents } from
+import { deriveIntents, listPortalDisabledIntents, resolveIntents } from
   '@/misc/utility/resolve-intents.js';
 import type { ExternalModule } from '@/registry/module-loader.js';
 import { loadCoreModule, loadExternalModules } from
@@ -63,11 +63,26 @@ if (process.env.NANO_SKIP_BANNER !== '1') {
 }
 
 if (DERIVED.privileged.length > 0) {
-  getLogger().warn(
-    `Privileged intents in use (${DERIVED.privileged.join(', ')}) — ` +
-    'enable them in the developer portal or their events will never ' +
-    'fire.'
+  /* Only warn when the portal toggle is actually missing. */
+  const PORTAL = await listPortalDisabledIntents(
+    DERIVED.privileged,
+    process.env.DISCORD_TOKEN ?? ''
   );
+
+  if (PORTAL.ok && PORTAL.data.length > 0) {
+    getLogger().warn(
+      'Privileged intent(s) OFF in the developer portal ' +
+      `(${PORTAL.data.join(', ')}) — login will fail or their events ` +
+      'will never fire. Enable them: Developer Portal > Bot > ' +
+      'Privileged Gateway Intents.'
+    );
+  } else if (!PORTAL.ok) {
+    getLogger().warn(
+      `Privileged intents in use (${DERIVED.privileged.join(', ')}) — ` +
+      'could not verify the developer-portal toggles ' +
+      `(${PORTAL.error})`
+    );
+  }
 }
 
 const BOT: Client = new Client({
