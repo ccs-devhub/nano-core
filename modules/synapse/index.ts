@@ -21,6 +21,7 @@ import {
   chunk,
   errorEmbed,
   getGuildSnapshot,
+  getModuleConfig,
   getModuleLogger,
   listMembers,
   listRoles,
@@ -36,12 +37,32 @@ import {
  * License: MIT (modules may use any license).
  */
 const MODULE_NAME = 'synapse';
-const PAGE_SIZE = 12;
+const DEFAULT_PAGE_SIZE = 12;
 const AUTOCOMPLETE_LIMIT = 25;
 const COOLDOWN_MS = 5000;
 const COOLDOWN_USES = 3;
 const DATE_LENGTH = 10;
 const MS_PER_MINUTE = 60000;
+
+/** Settings surfaced by nano-tui.json, read from module_config. */
+interface SynapseConfig {
+  page_size?: number;
+  theme?: string;
+  log_member_flow?: boolean;
+}
+
+/**
+ * Live view of module_config.synapse with the panel defaults —
+ * re-read per interaction so TUI edits apply without a restart.
+ */
+function synapseConfig(): Required<SynapseConfig> {
+  const RAW = getModuleConfig<SynapseConfig>(MODULE_NAME) ?? {};
+  return {
+    page_size: RAW.page_size ?? DEFAULT_PAGE_SIZE,
+    theme: RAW.theme ?? 'nano',
+    log_member_flow: RAW.log_member_flow ?? true,
+  };
+}
 
 const DATA = new SlashCommandBuilder()
   .setName('synapse')
@@ -146,7 +167,7 @@ async function execute(
       description: TEXT,
       fields: [{ name: 'roundtrip', value: `${LATENCY}ms`, inline: true }],
       timestamp: true,
-    })],
+    }, synapseConfig().theme)],
   });
 }
 
@@ -189,6 +210,7 @@ async function buildScanPages(
     return [];
   }
 
+  const CONFIG = synapseConfig();
   const DATA_PAGE = buildEmbed({
     title: `scan: ${SNAPSHOT.data.name}`,
     description: SNAPSHOT.data.description ?? 'No description.',
@@ -215,15 +237,15 @@ async function buildScanPages(
       },
     ],
     timestamp: true,
-  });
-  const CHANNEL_PAGES = chunk(SNAPSHOT.data.channels, PAGE_SIZE)
+  }, CONFIG.theme);
+  const CHANNEL_PAGES = chunk(SNAPSHOT.data.channels, CONFIG.page_size)
     .map((page: ChannelSummary[], index: number): EmbedBuilder => {
       return buildEmbed({
         title: `channels (page ${index + 1})`,
         description: page.map((channel: ChannelSummary): string => {
           return `${channel.position}. ${channel.name} [${channel.type}]`;
         }).join('\n'),
-      });
+      }, CONFIG.theme);
     });
   return [DATA_PAGE, ...CHANNEL_PAGES];
 }
@@ -239,8 +261,9 @@ async function handleRoles(
     return;
   }
 
+  const CONFIG = synapseConfig();
   const HIGHLIGHT = interaction.options.getString('highlight');
-  const PAGES = chunk(ROLES.data, PAGE_SIZE).map(
+  const PAGES = chunk(ROLES.data, CONFIG.page_size).map(
     (page: RoleSummary[], index: number): EmbedBuilder => {
       return buildEmbed({
         title: `roles (page ${index + 1})`,
@@ -248,7 +271,7 @@ async function handleRoles(
           const MARK = role.id === HIGHLIGHT ? ' <<' : '';
           return `${role.position}. ${role.name} (${role.color})${MARK}`;
         }).join('\n'),
-      });
+      }, CONFIG.theme);
     }
   );
   await paginate(interaction, PAGES);
@@ -270,7 +293,8 @@ async function handleMembers(
     return;
   }
 
-  const PAGES = chunk(MEMBERS.data, PAGE_SIZE).map(
+  const CONFIG = synapseConfig();
+  const PAGES = chunk(MEMBERS.data, CONFIG.page_size).map(
     (page: MemberSummary[], index: number): EmbedBuilder => {
       return buildEmbed({
         title: `members (page ${index + 1})`,
@@ -278,7 +302,7 @@ async function handleMembers(
           const BOT_MARK = member.is_bot ? ' [bot]' : '';
           return `${member.display_name} (${member.username})${BOT_MARK}`;
         }).join('\n'),
-      });
+      }, CONFIG.theme);
     }
   );
   await paginate(interaction, PAGES);
@@ -320,7 +344,7 @@ async function handleVitals(
         { name: 'modules', value: MODULE_LINES || 'none' },
       ],
       timestamp: true,
-    })],
+    }, synapseConfig().theme)],
   });
 }
 
@@ -359,8 +383,9 @@ async function rescan(
 
 const MODULE: NanoModule = {
   name: MODULE_NAME,
-  version: '0.1.0',
+  version: '0.2.0',
   license: 'MIT',
+  kind: 'hybrid',
   description:
     'Base sensory module: scan guilds, roles, members, channels; ' +
     'core vitals and echo tests.',
@@ -384,6 +409,10 @@ const MODULE: NanoModule = {
       name: 'guildMemberAdd',
       intents: ['GuildMembers'],
       execute: (...args: unknown[]): void => {
+        if (!synapseConfig().log_member_flow) {
+          return;
+        }
+
         const MEMBER = args[0] as { user?: { tag?: string } };
         getModuleLogger(MODULE_NAME).info(
           { user: MEMBER.user?.tag },
@@ -395,6 +424,10 @@ const MODULE: NanoModule = {
       name: 'guildMemberRemove',
       intents: ['GuildMembers'],
       execute: (...args: unknown[]): void => {
+        if (!synapseConfig().log_member_flow) {
+          return;
+        }
+
         const MEMBER = args[0] as { user?: { tag?: string } };
         getModuleLogger(MODULE_NAME).info(
           { user: MEMBER.user?.tag },
