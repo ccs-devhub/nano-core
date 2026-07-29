@@ -1,3 +1,7 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import type { Client } from 'discord.js';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -15,8 +19,9 @@ const HTTP_OK = 200;
 const HTTP_UNAUTHORIZED = 401;
 const HTTP_NOT_FOUND = 404;
 const HTTP_METHOD_NOT_ALLOWED = 405;
-const READ_TOOLS = 11;
-const ALL_TOOLS = 31;
+const READ_TOOLS = 24;
+const WRITE_TOOLS = 39;
+const ALL_TOOLS = 67;
 
 function fakeBot(ready: boolean = true): Client {
   return {
@@ -150,7 +155,11 @@ describe('mcp module server', (): void => {
 
   it('lists only read tools when gates are off', async ():
   Promise<void> => {
-    await startMcpServer(fakeBot(), { port: 0 });
+    await startMcpServer(fakeBot(), {
+      port: 0,
+      allow_write: false,
+      allow_moderation: false,
+    });
 
     const RESULT = await rpc('tools/list', {});
     const NAMES = (RESULT.body.result?.tools ?? [])
@@ -161,7 +170,12 @@ describe('mcp module server', (): void => {
     expect(NAMES).toHaveLength(READ_TOOLS);
     expect(NAMES).toContain('bot_vitals');
     expect(NAMES).toContain('guild_snapshot');
+    expect(NAMES).toContain('fetch_audit_log');
+    expect(NAMES).toContain('get_guild_settings');
+    expect(NAMES).toContain('get_onboarding');
+    expect(NAMES).toContain('list_automod_rules');
     expect(NAMES).not.toContain('send_message');
+    expect(NAMES).not.toContain('edit_guild_settings');
     expect(NAMES).not.toContain('kick_member');
     expect(mcpStatus().tool_count).toBe(READ_TOOLS);
   });
@@ -182,7 +196,44 @@ describe('mcp module server', (): void => {
 
     expect(NAMES).toHaveLength(ALL_TOOLS);
     expect(NAMES).toContain('send_message');
+    expect(NAMES).toContain('send_dm');
+    expect(NAMES).toContain('create_scheduled_event');
+    expect(NAMES).toContain('set_channel_permissions');
+    expect(NAMES).toContain('set_role_positions');
+    expect(NAMES).toContain('edit_guild_settings');
+    expect(NAMES).toContain('create_automod_rule');
+    expect(NAMES).toContain('edit_welcome_screen');
+    expect(NAMES).toContain('edit_onboarding');
+    expect(NAMES).toContain('set_incident_actions');
+    expect(NAMES).toContain('create_emoji');
     expect(NAMES).toContain('kick_member');
+  });
+
+  it('re-reads gates from nano.config.json on every request', async ():
+  Promise<void> => {
+    const ROOT = await mkdtemp(join(tmpdir(), 'nano-mcp-gates-'));
+    const CONFIG_PATH = join(ROOT, 'nano.config.json');
+    await writeFile(CONFIG_PATH, JSON.stringify({
+      module_config: { mcp: { allow_write: false } },
+    }));
+    await startMcpServer(fakeBot(), { port: 0, config_root: ROOT });
+
+    const BEFORE = await rpc('tools/list', {});
+    expect(BEFORE.body.result?.tools ?? []).toHaveLength(READ_TOOLS);
+
+    await writeFile(CONFIG_PATH, JSON.stringify({
+      module_config: { mcp: { allow_write: true } },
+    }));
+
+    const AFTER = await rpc('tools/list', {});
+    const NAMES = (AFTER.body.result?.tools ?? [])
+      .map((tool: { name: string }): string => {
+        return tool.name;
+      });
+    expect(NAMES).toHaveLength(READ_TOOLS + WRITE_TOOLS);
+    expect(NAMES).toContain('edit_channel');
+    expect(mcpStatus().tool_count).toBe(READ_TOOLS + WRITE_TOOLS);
+    await rm(ROOT, { recursive: true, force: true });
   });
 
   it('serves bot_vitals with the NanoResult envelope', async ():

@@ -26,6 +26,8 @@ interface McpConfig {
   port?: number;
   allow_write?: boolean;
   allow_moderation?: boolean;
+  /** Config directory override (tests); defaults to process.cwd(). */
+  config_root?: string;
 }
 
 export interface McpStatus {
@@ -49,10 +51,29 @@ let listening = false;
 let status_detail = 'not started';
 let tool_count = 0;
 let active_port = DEFAULT_PORT;
+let boot_overrides: McpConfig = {};
 let active_gates: McpGates = {
   allow_write: false,
   allow_moderation: false,
 };
+
+/**
+ * Gates are resolved fresh from nano.config.json on EVERY request
+ * (explicit start overrides still win), so flipping
+ * module_config.mcp.allow_write takes effect on the next call - no
+ * module bounce or bot restart needed. The port stays boot-time: a
+ * live rebind would drop the listener mid-session.
+ */
+function resolveGates(): McpGates {
+  const CONFIG: McpConfig = {
+    ...getModuleConfig<McpConfig>('mcp', boot_overrides.config_root) ?? {},
+    ...boot_overrides,
+  };
+  return {
+    allow_write: CONFIG.allow_write === true,
+    allow_moderation: CONFIG.allow_moderation === true,
+  };
+}
 
 function rpcError(
   res: ServerResponse,
@@ -73,7 +94,7 @@ function buildServer(bot: Client, gates: McpGates): McpServer {
     name: 'nano-core',
     version: NANO_VERSION,
   });
-  registerNanoTools(SERVER, bot, gates);
+  tool_count = registerNanoTools(SERVER, bot, gates);
   return SERVER;
 }
 
@@ -82,6 +103,7 @@ async function handlePost(
   req: IncomingMessage,
   res: ServerResponse
 ): Promise<void> {
+  active_gates = resolveGates();
   const SERVER = buildServer(bot, active_gates);
   const TRANSPORT = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
@@ -101,17 +123,15 @@ export async function startMcpServer(
   overrides: McpConfig = {}
 ): Promise<void> {
   const LOGGER = getModuleLogger('mcp');
+  boot_overrides = overrides;
   const CONFIG: McpConfig = {
-    ...getModuleConfig<McpConfig>('mcp') ?? {},
+    ...getModuleConfig<McpConfig>('mcp', overrides.config_root) ?? {},
     ...overrides,
   };
   const TOKEN = process.env.NANO_MCP_TOKEN;
 
   active_port = CONFIG.port ?? DEFAULT_PORT;
-  active_gates = {
-    allow_write: CONFIG.allow_write === true,
-    allow_moderation: CONFIG.allow_moderation === true,
-  };
+  active_gates = resolveGates();
 
   if (!TOKEN) {
     status_detail = 'NANO_MCP_TOKEN is not set - MCP endpoint ' +
@@ -120,11 +140,7 @@ export async function startMcpServer(
     return;
   }
 
-  tool_count = registerNanoTools(
-    new McpServer({ name: 'nano-core-probe', version: NANO_VERSION }),
-    bot,
-    active_gates
-  );
+  buildServer(bot, active_gates);
 
   const HANDLER = (req: IncomingMessage, res: ServerResponse): void => {
     const PATH = (req.url ?? '').split('?')[0];
