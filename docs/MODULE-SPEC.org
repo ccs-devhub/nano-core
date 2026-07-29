@@ -8,6 +8,17 @@
   optional health check. The core is MPL-2.0; modules may use *any
   license* (declare it in the =license= field and your repo).
 
+  The core already provides the whole bot surface — every connection,
+  service, and API wrapper. A module never wires anything; it only
+  *uses* what the core exposes. That gives every module a *kind*:
+
+  | =extension= | Core capability, no slash commands (e.g. mcp)       |
+  | =command=   | Slash commands only (e.g. embed-styler)             |
+  | =hybrid=    | Commands plus events/tasks (e.g. synapse)           |
+
+  Declare it with the optional =kind= field or let the core derive it
+  from the contents. Not every module needs commands.
+
 * The contract
   #+begin_src typescript
   import type { NanoModule } from '@ccs-devhub/nano-core';
@@ -17,6 +28,7 @@
     version: '0.1.0',
     description: 'What it does.',
     license: 'MIT',
+    kind: 'hybrid',             // optional: extension | command | hybrid
     commands: [{
       data: /* SlashCommandBuilder */ undefined as never,
       cooldown: { scope: 'user', delay_ms: 5000, limit: 2 }, // optional
@@ -77,10 +89,28 @@
     =unbanMember=, =timeoutMember=, =setNickname=
   - =message=: =sendMessage=, =editMessage=, =deleteMessage=,
     =bulkDeleteMessages=, =fetchMessages=, =pinMessage=, =unpinMessage=,
-    =reactToMessage=
+    =reactToMessage=, =removeOwnReaction= — payloads carry =content=,
+    a themed =embed= spec, =files= (URLs or local paths), =reply_to=,
+    and =poll= in any mix
+  - =dm=: =sendDirectMessage=
+  - =thread=: =createThread=, =listThreads=, =setThreadArchived=
+  - =webhook=: =createWebhook=, =listWebhooks=, =sendWebhookMessage=
+    (optional name/avatar mask), =deleteWebhook=
+  - =invite=: =createInvite=, =listInvites=, =deleteInvite=
+  - =emoji=: =listEmojis=, =listStickers=
+  - =scheduled-event=: =listScheduledEvents=, =createScheduledEvent=
+    (voice or external), =deleteScheduledEvent=
+  - =guild extras=: =listBans=, =fetchAuditLog=
+  - =presence=: =setBotPresence= (bot status + activity line)
   - =embed / theme=: =buildEmbed(spec, theme?)=, =registerTheme=,
     =getTheme=, =listThemes= — style modules register palettes on
     =onEnable=.
+  - =embed templates=: =registerEmbedTemplate=, =getEmbedTemplate=,
+    =listEmbedTemplates=, =renderEmbedTemplate(name, slots,
+    overrides)=, =fillTemplateSlots= — a template is a named
+    EmbedSpec whose strings hold ={{slot}}= placeholders. The core
+    ships =default=; embed-styler ships five more. Register yours on
+    =onEnable= (like themes).
 
 * Installing and managing modules
   #+begin_src shell
@@ -123,8 +153,33 @@
   - A module that fails to import is logged and skipped; it never
     prevents the bot from starting.
 
-* Gateway intents
-  Declare the intents your module needs in the host bot's
-  =nano.config.json= (=intents= array, e.g. ="GuildMessages"=,
-  ="GuildMembers"=). Privileged intents also need to be switched on in
-  the Discord developer portal. =Guilds= is always included.
+* Gateway intents and events
+  Every discord.js Client event is already wired: declare a listener
+  in =events= with the event =name= and the =intents= it needs, and
+  the core derives the Client intent set at boot — a module never
+  touches the Client. The host can also force intents in
+  =nano.config.json= (=intents= array). =Guilds= is always included.
+  Privileged intents (=GuildMembers=, =GuildPresences=,
+  =MessageContent=) additionally need the developer-portal toggle;
+  boot and =npm run doctor= verify the toggles via the application
+  flags.
+
+  Common events and the intent each needs:
+
+  | Event                                  | Intent            |
+  |----------------------------------------+-------------------|
+  | =messageCreate= / =messageDelete=      | =GuildMessages= (+ =MessageContent= to read text) |
+  | =messageReactionAdd= / =Remove=        | =GuildMessageReactions= |
+  | =guildMemberAdd= / =Remove= / =Update= | =GuildMembers= (privileged) |
+  | =presenceUpdate=                       | =GuildPresences= (privileged) |
+  | =voiceStateUpdate=                     | =GuildVoiceStates= |
+  | =channelCreate= / =Delete= / =roleCreate= / =guildUpdate= ... | =Guilds= |
+  | =guildBanAdd= / =guildBanRemove=       | =GuildModeration=  |
+  | =inviteCreate= / =inviteDelete=        | =GuildInvites=     |
+  | =threadCreate= / =threadUpdate=        | =Guilds=           |
+  | =guildScheduledEventCreate= ...        | =GuildScheduledEvents= |
+  | =typingStart=                          | =GuildMessageTyping= |
+  | =interactionCreate=, =ready=           | none (always delivered) |
+
+  Any event name from the discord.js Client works — the table is the
+  common subset, not a limit.

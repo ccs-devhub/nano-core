@@ -101,7 +101,13 @@ reference; the [[file:../README.org][README]] is the quickstart.
   | =database=    | The configured database opens                                  |
   | =store=       | The registry is reachable (or served from cache)              |
   | =modules=     | Every configured module entry imports                         |
-  | =intents=     | The derived intent set; flags privileged ones                  |
+  | =intents=     | The derived intent set; privileged ones are verified against the developer-portal toggles (application flags) and fail the check when OFF |
+  | =commands=    | Registered slash commands match the local definitions in the active scope (guild when =bot.dev_guild_id= is set, global otherwise) |
+  | =global-scope= | Only when stale GLOBAL commands linger while developing at guild scope — they duplicate the dev guild and appear as ghosts in every other guild |
+
+  Fix an out-of-sync scope by starting the bot (it diffs and
+  re-registers on boot) or with =npm run module -- commands --sync=;
+  clear stale globals with =npm run module -- commands --clean-global=.
 
 * Running the bot
   =npm run dev= (tsx) or =npm run build && npm start= (compiled).
@@ -143,6 +149,9 @@ reference; the [[file:../README.org][README]] is the quickstart.
   | Command                        | Effect                                                        |
   |--------------------------------+---------------------------------------------------------------|
   | =doctor=                       | Same checks as =npm run doctor=                               |
+  | =commands=                     | Audit slash commands: local vs guild vs global scope          |
+  | =commands --sync=              | Force re-register the active scope                            |
+  | =commands --clean-global=      | Delete every global command (guild scope untouched)           |
   | =install <name>=               | Install a store module at its exact validated version        |
   | =add ./modules/x=              | Register a local module folder                                |
   | =add <npm-pkg> --allow-external= | Install an UNREVIEWED npm module after the risk warning     |
@@ -157,7 +166,7 @@ reference; the [[file:../README.org][README]] is the quickstart.
 * Discord commands
   | Command                                  | Access        | Effect                                        |
   |------------------------------------------+---------------+-----------------------------------------------|
-  | =/module list=                           | Administrator | Modules with version, origin, state           |
+  | =/module list=                           | Administrator | Modules with version, origin, kind, state     |
   | =/module enable= / =disable <name>=      | Administrator | Toggle at runtime (persisted)                 |
   | =/module health [name]=                  | Administrator | healthy / degraded / down / disabled          |
   | =/module sync=                           | Administrator | Re-register slash commands after toggling     |
@@ -165,7 +174,9 @@ reference; the [[file:../README.org][README]] is the quickstart.
   | =/synapse roles= / =members= / =channels= | everyone     | Server data (members needs the GuildMembers intent) |
   | =/synapse vitals=                        | everyone      | Core health: ping, uptime, module reports     |
   | =/synapse echo <text>=                   | everyone      | Roundtrip test with latency                   |
-  | =/embed <title> <description> [theme]=   | everyone      | Themed embed (embed-styler module)            |
+  | =/embed send <template> <title> <message> [version] [theme] [image] [channel]= | ManageMessages | Fill a template and send it to any channel (embed-styler) |
+  | =/embed preview ...=                     | ManageMessages | Render the same options ephemerally          |
+  | =/embed templates=                       | ManageMessages | List registered templates and their slots    |
   | =/ping=, =/server=, =/user=              | everyone      | Core utility commands                         |
 
 * Modules
@@ -178,6 +189,23 @@ reference; the [[file:../README.org][README]] is the quickstart.
   reference implementation is =modules/synapse/=. Modules may use any
   license. Disabled modules stay installed but their commands,
   events, components, and tasks are gated off.
+
+  Every module has a *kind* — =extension= (core capability, no slash
+  commands, e.g. mcp), =command= (commands only, e.g. embed-styler),
+  or =hybrid= (both, e.g. synapse). Declare it with the optional
+  =kind= field or let the core derive it; =/module list= and the boot
+  log show it. Not every module needs commands: the core already
+  provides the whole bot surface, modules just use it.
+
+* Embed templates
+  The core covers embeds 100% with default styling: =buildEmbed(spec,
+  theme?)= plus a template registry. A template is a named EmbedSpec
+  whose strings may hold ={{slot}}= placeholders —
+  =registerEmbedTemplate= / =getEmbedTemplate= / =listEmbedTemplates=
+  / =renderEmbedTemplate(name, slots, overrides)= are all exported
+  from the barrel. The core ships the =default= template; embed-styler
+  registers five more (announcement, alert, notice, changelog,
+  welcome) and exposes them through =/embed=.
 
 * The store
   The registry is one curated =registry.json= in
@@ -193,7 +221,7 @@ reference; the [[file:../README.org][README]] is the quickstart.
 
 * The MCP bridge
   The =mcp= module runs a Model Context Protocol server inside the
-  bot process, so MCP clients (Claude Code, agents, editors) can
+  bot process, so MCP clients (AI agents, editors) can
   drive the NanoResult API layer as tools: guild snapshots, channel
   and role listings, vitals, and — only when gated on — writes and
   moderation.
@@ -205,16 +233,22 @@ reference; the [[file:../README.org][README]] is the quickstart.
     =openssl rand -hex 32=). Requests without the matching
     =Authorization: Bearer= header get 401. Without the variable the
     endpoint stays down and module health reports degraded.
-  - Gates: =module_config.mcp.allow_write= registers message,
-    channel, role, and nickname tools; =allow_moderation= registers
-    kick/ban/timeout tools. Both default off — ungated clients never
-    even see those tools in =tools/list=.
-  - Client wiring: the repo ships =.mcp.json= pointing Claude Code at
-    the endpoint with the env-expanded bearer token. Export
-    =NANO_MCP_TOKEN= in the shell running Claude Code.
-  - Status: the =/mcp= Discord command (administrator only) shows
-    endpoint state, port, tool count, and gates; =module health= in
-    the TUI Modules view reports the same.
+  - Gates: =module_config.mcp.allow_write= registers the write
+    tools (messages, DMs, channels including permission overwrites,
+    threads, webhooks, invites, roles, nicknames, scheduled events,
+    bot presence);
+    =allow_moderation= registers kick/ban/unban/timeout tools. Both
+    default off — ungated clients never even see those tools in
+    =tools/list=. Gates are re-read from =nano.config.json= on
+    every request, so flipping one applies on the next call without
+    a restart (clients that cache =tools/list= may need a
+    reconnect). Only the port still needs a module restart.
+  - Client wiring: the repo ships =.mcp.json= pointing MCP clients
+    at the endpoint with the env-expanded bearer token. Export
+    =NANO_MCP_TOKEN= in the shell running the client.
+  - Status: mcp is a pure core extension (no slash command).
+    =/module health mcp= reports endpoint state and detail; the TUI
+    Modules view and its mcp panel show the port and both gates.
 
 * Services (for module authors)
   Everything importable from the core (in-repo: =@/= aliases). All
