@@ -56,3 +56,14 @@ public/build/
 data/
 .nano/
 nano.config.json
+
+# =====================
+# AI TOOLING (never committed)
+# =====================
+.claude/
+CLAUDE.md
+
+# =====================
+# LOCAL DEV ENV (never committed)
+# =====================
+mise.local.toml
