@@ -2,6 +2,8 @@ import type {
   Client,
   GuildTextBasedChannel,
   Message,
+  MessageCreateOptions,
+  PollData,
   TextBasedChannel
 } from 'discord.js';
 
@@ -21,14 +23,28 @@ export interface MessageSummary {
   pinned: boolean;
 }
 
+/** JSON-friendly poll: a question and 2-10 plain-text answers. */
+export interface NanoPollSpec {
+  question: string;
+  answers: string[];
+  duration_hours?: number;
+  multi_select?: boolean;
+}
+
 /**
- * JSON-friendly outgoing message: plain text, a themed embed spec, or
- * both. Strings are accepted anywhere a payload is expected.
+ * JSON-friendly outgoing message: plain text, a themed embed spec,
+ * file attachments (URLs or local paths), a reply reference, a poll —
+ * any mix. Strings are accepted anywhere a payload is expected.
  */
 export interface NanoMessagePayload {
   content?: string;
   embed?: EmbedSpec;
   theme?: string;
+  /** Attachment sources: https URLs or local file paths. */
+  files?: string[];
+  /** Message id this message replies to (same channel). */
+  reply_to?: string;
+  poll?: NanoPollSpec;
 }
 
 const DEFAULT_FETCH_LIMIT = 50;
@@ -74,7 +90,12 @@ export async function editMessage(
   return runSafe(async (): Promise<MessageSummary> => {
     const CHANNEL = await requireTextChannel(bot, channel_id);
     const MESSAGE = await CHANNEL.messages.fetch(message_id);
-    const EDITED = await MESSAGE.edit(buildSendOptions(payload));
+    /* Edits accept a narrower shape: no reply/poll/files. */
+    const OPTIONS = buildSendOptions(payload);
+    const EDITED = await MESSAGE.edit({
+      content: OPTIONS.content,
+      embeds: OPTIONS.embeds,
+    });
     return toMessageSummary(EDITED);
   });
 }
@@ -172,6 +193,27 @@ export async function reactToMessage(
   });
 }
 
+/** Remove the bot's own reaction from a message. */
+export async function removeOwnReaction(
+  bot: Client,
+  channel_id: string,
+  message_id: string,
+  emoji: string
+): Promise<NanoResult<string>> {
+  return runSafe(async (): Promise<string> => {
+    const CHANNEL = await requireTextChannel(bot, channel_id);
+    const MESSAGE = await CHANNEL.messages.fetch(message_id);
+    const REACTION = MESSAGE.reactions.resolve(emoji);
+
+    if (!REACTION) {
+      throw new Error(`No '${emoji}' reaction on message '${message_id}'.`);
+    }
+
+    await REACTION.users.remove(bot.user?.id);
+    return message_id;
+  });
+}
+
 async function requireTextChannel(
   bot: Client,
   channel_id: string
@@ -184,9 +226,15 @@ async function requireTextChannel(
   return CHANNEL;
 }
 
-function buildSendOptions(
+const DEFAULT_POLL_HOURS = 24;
+
+/**
+ * Translate a NanoMessagePayload into discord.js send options.
+ * Internal building block for the API layer (messages, DMs, webhooks).
+ */
+export function buildSendOptions(
   payload: string | NanoMessagePayload
-): { content?: string; embeds?: ReturnType<typeof buildEmbed>[] } {
+): MessageCreateOptions {
   if (typeof payload === 'string') {
     return { content: payload };
   }
@@ -196,5 +244,21 @@ function buildSendOptions(
     embeds: payload.embed
       ? [buildEmbed(payload.embed, payload.theme)]
       : undefined,
+    files: payload.files,
+    reply: payload.reply_to
+      ? { messageReference: payload.reply_to }
+      : undefined,
+    poll: payload.poll ? toPollData(payload.poll) : undefined,
+  };
+}
+
+function toPollData(spec: NanoPollSpec): PollData {
+  return {
+    question: { text: spec.question },
+    answers: spec.answers.map((text: string): { text: string } => {
+      return { text };
+    }),
+    duration: spec.duration_hours ?? DEFAULT_POLL_HOURS,
+    allowMultiselect: spec.multi_select ?? false,
   };
 }

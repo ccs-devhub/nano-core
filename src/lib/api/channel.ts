@@ -2,13 +2,28 @@ import type {
   Client,
   GuildChannelEditOptions,
   GuildChannelTypes,
-  NonThreadGuildBasedChannel
+  NonThreadGuildBasedChannel,
+  OverwriteResolvable,
+  PermissionOverwriteOptions,
+  PermissionOverwrites
 } from 'discord.js';
-import { ChannelType } from 'discord.js';
+import {
+  ChannelType,
+  OverwriteType,
+  PermissionFlagsBits
+} from 'discord.js';
 
 import { requireGuild } from '@/api/guild.js';
 import type { NanoResult } from '@/types/nano-result.js';
 import { runSafe } from '@/types/nano-result.js';
+
+/** One channel permission overwrite, decoded for AI consumers. */
+export interface PermissionOverwriteSummary {
+  id: string;
+  type: 'role' | 'member';
+  allow: string[];
+  deny: string[];
+}
 
 /** Plain-JSON view of a guild channel, safe for logs and AI consumers. */
 export interface ChannelSummary {
@@ -17,6 +32,21 @@ export interface ChannelSummary {
   type: string;
   parent_id: string | null;
   position: number;
+  topic: string | null;
+  nsfw: boolean;
+  rate_limit_per_user: number | null;
+  default_thread_rate_limit_per_user: number | null;
+  bitrate: number | null;
+  user_limit: number | null;
+  permission_overwrites: PermissionOverwriteSummary[];
+}
+
+/** One overwrite to WRITE: plain permission names in allow/deny. */
+export interface PermissionOverwriteInput {
+  id: string;
+  type?: 'role' | 'member';
+  allow?: string[];
+  deny?: string[];
 }
 
 export interface CreateChannelOptions {
@@ -25,6 +55,15 @@ export interface CreateChannelOptions {
   parent_id?: string;
   topic?: string;
   position?: number;
+  rate_limit_per_user?: number;
+  default_thread_rate_limit_per_user?: number;
+  permission_overwrites?: PermissionOverwriteInput[];
+}
+
+export interface SetChannelPermissionsOptions {
+  overwrites: PermissionOverwriteInput[];
+  replace?: boolean;
+  reason?: string;
 }
 
 export interface EditChannelOptions {
@@ -32,6 +71,62 @@ export interface EditChannelOptions {
   topic?: string;
   parent_id?: string | null;
   position?: number;
+  rate_limit_per_user?: number;
+  default_thread_rate_limit_per_user?: number;
+}
+
+function toOverwriteSummary(
+  overwrite: PermissionOverwrites
+): PermissionOverwriteSummary {
+  return {
+    id: overwrite.id,
+    type: overwrite.type === OverwriteType.Role ? 'role' : 'member',
+    allow: overwrite.allow.toArray(),
+    deny: overwrite.deny.toArray(),
+  };
+}
+
+export function assertPermissionName(
+  name: string
+): keyof typeof PermissionFlagsBits {
+  if (!(name in PermissionFlagsBits)) {
+    throw new Error(`Unknown permission '${name}'.`);
+  }
+  return name as keyof typeof PermissionFlagsBits;
+}
+
+function resolveOverwriteType(
+  type_name?: 'role' | 'member'
+): OverwriteType {
+  return type_name === 'member'
+    ? OverwriteType.Member
+    : OverwriteType.Role;
+}
+
+function toOverwriteResolvable(
+  input: PermissionOverwriteInput
+): OverwriteResolvable {
+  return {
+    id: input.id,
+    type: resolveOverwriteType(input.type),
+    allow: (input.allow ?? []).map(assertPermissionName),
+    deny: (input.deny ?? []).map(assertPermissionName),
+  };
+}
+
+function toPermissionOptions(
+  input: PermissionOverwriteInput
+): PermissionOverwriteOptions {
+  const OPTIONS: PermissionOverwriteOptions = {};
+
+  for (const NAME of input.allow ?? []) {
+    OPTIONS[assertPermissionName(NAME)] = true;
+  }
+
+  for (const NAME of input.deny ?? []) {
+    OPTIONS[assertPermissionName(NAME)] = false;
+  }
+  return OPTIONS;
 }
 
 export function toChannelSummary(
@@ -43,6 +138,19 @@ export function toChannelSummary(
     type: ChannelType[channel.type],
     parent_id: channel.parentId,
     position: channel.position,
+    topic: 'topic' in channel ? channel.topic : null,
+    nsfw: 'nsfw' in channel ? channel.nsfw : false,
+    rate_limit_per_user:
+      'rateLimitPerUser' in channel ? channel.rateLimitPerUser : null,
+    default_thread_rate_limit_per_user:
+      'defaultThreadRateLimitPerUser' in channel
+        ? channel.defaultThreadRateLimitPerUser ?? null
+        : null,
+    bitrate: 'bitrate' in channel ? channel.bitrate : null,
+    user_limit: 'userLimit' in channel ? channel.userLimit : null,
+    permission_overwrites: Array.from(
+      channel.permissionOverwrites.cache.values()
+    ).map(toOverwriteSummary),
   };
 }
 
@@ -98,6 +206,12 @@ export async function createChannel(
       parent: options.parent_id,
       topic: options.topic,
       position: options.position,
+      rateLimitPerUser: options.rate_limit_per_user,
+      defaultThreadRateLimitPerUser:
+        options.default_thread_rate_limit_per_user,
+      permissionOverwrites: options.permission_overwrites?.map(
+        toOverwriteResolvable
+      ),
     });
     return toChannelSummary(CHANNEL);
   });
@@ -136,8 +250,73 @@ export async function editChannel(
       PAYLOAD.position = options.position;
     }
 
+    if (options.rate_limit_per_user !== undefined) {
+      PAYLOAD.rateLimitPerUser = options.rate_limit_per_user;
+    }
+
+    if (options.default_thread_rate_limit_per_user !== undefined) {
+      PAYLOAD.defaultThreadRateLimitPerUser =
+        options.default_thread_rate_limit_per_user;
+    }
+
     const EDITED = await CHANNEL.edit(PAYLOAD);
     return toChannelSummary(EDITED);
+  });
+}
+
+/**
+ * Write channel permission overwrites. Default mode upserts each listed
+ * role/member EXACTLY as given (unlisted permissions go neutral); an
+ * entry with empty allow AND deny clears that target's overwrite.
+ * `replace: true` swaps the channel's entire overwrite list instead.
+ */
+export async function setChannelPermissions(
+  bot: Client,
+  guild_id: string,
+  channel_id: string,
+  options: SetChannelPermissionsOptions
+): Promise<NanoResult<ChannelSummary>> {
+  return runSafe(async (): Promise<ChannelSummary> => {
+    const GUILD = await requireGuild(bot, guild_id);
+    const CHANNEL = await GUILD.channels.fetch(channel_id);
+
+    if (!CHANNEL || CHANNEL.isThread()) {
+      throw new Error(`Channel '${channel_id}' not found.`);
+    }
+
+    if (options.replace) {
+      await CHANNEL.permissionOverwrites.set(
+        options.overwrites.map(toOverwriteResolvable),
+        options.reason
+      );
+    } else {
+      for (const ENTRY of options.overwrites) {
+        const IS_CLEAR = (ENTRY.allow ?? []).length === 0
+          && (ENTRY.deny ?? []).length === 0;
+
+        if (IS_CLEAR) {
+          await CHANNEL.permissionOverwrites.delete(
+            ENTRY.id, options.reason
+          );
+        } else {
+          await CHANNEL.permissionOverwrites.create(
+            ENTRY.id,
+            toPermissionOptions(ENTRY),
+            {
+              type: resolveOverwriteType(ENTRY.type),
+              reason: options.reason,
+            }
+          );
+        }
+      }
+    }
+
+    const FRESH = await GUILD.channels.fetch(channel_id, { force: true });
+
+    if (!FRESH || FRESH.isThread()) {
+      throw new Error(`Channel '${channel_id}' not found after update.`);
+    }
+    return toChannelSummary(FRESH);
   });
 }
 
