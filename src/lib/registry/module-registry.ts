@@ -101,6 +101,39 @@ export class ModuleRegistry {
     return this.modules.get(module_name);
   }
 
+  /**
+   * Another module's offered API — the graceful-degradation contract:
+   * undefined when the module is absent, disabled, or offers no (or a
+   * version-incompatible) API, and consumers MUST handle undefined.
+   * LAZY BY LAW (N13): resolve at every call site, never capture the
+   * result at onEnable — registration order and live enable/disable
+   * both invalidate captured references.
+   */
+  getModuleApi<T>(
+    module_name: string,
+    options: { api_version?: string } = {}
+  ): T | undefined {
+    const ENTRY = this.modules.get(module_name);
+
+    if (!ENTRY?.enabled) {
+      return undefined;
+    }
+
+    const API = ENTRY.module.provides;
+
+    if (API === undefined) {
+      return undefined;
+    }
+
+    if (
+      options.api_version !== undefined &&
+      ENTRY.module.api_version !== options.api_version
+    ) {
+      return undefined;
+    }
+    return API as T;
+  }
+
   isEnabled(module_name: string): boolean {
     return this.modules.get(module_name)?.enabled === true;
   }

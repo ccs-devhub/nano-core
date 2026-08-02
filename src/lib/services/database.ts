@@ -6,6 +6,8 @@ import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 
+import type { GuildConfigPersistence } from
+  '@/services/guild-store.js';
 import type { PersistedJob, SchedulerPersistence } from
   '@/services/scheduler.js';
 import type { NanoResult } from '@/types/nano-result.js';
@@ -155,6 +157,86 @@ export class DatabaseService {
     };
   }
 
+  /** Guild-config storage backed by the core `nano_guild_config`
+   * table. Writes are single synchronous transactions (DB9: a
+   * better-sqlite3 transaction can never contain an await). */
+  guildConfigPersistence(): GuildConfigPersistence {
+    const CONNECTION = this.connection;
+    const UPSERT = CONNECTION.prepare(
+      'INSERT INTO nano_guild_config ' +
+      '(guild_id, module_id, key, value, updated_at) ' +
+      'VALUES (?, ?, ?, ?, ?) ' +
+      'ON CONFLICT (guild_id, module_id, key) ' +
+      'DO UPDATE SET value = excluded.value, ' +
+      'updated_at = excluded.updated_at'
+    );
+    const UPSERT_MANY = CONNECTION.transaction(
+      (
+        guild_id: string,
+        module_id: string,
+        entries: { key: string; value: string }[],
+        replace: boolean
+      ): void => {
+        if (replace) {
+          CONNECTION.prepare(
+            'DELETE FROM nano_guild_config ' +
+            'WHERE guild_id = ? AND module_id = ?'
+          ).run(guild_id, module_id);
+        }
+
+        const NOW = Date.now();
+
+        for (const _entry of entries) {
+          UPSERT.run(guild_id, module_id, _entry.key, _entry.value, NOW);
+        }
+      }
+    );
+
+    return {
+      loadModuleConfig: (
+        guild_id: string,
+        module_id: string
+      ): { key: string; value: string }[] => {
+        return CONNECTION.prepare(
+          'SELECT key, value FROM nano_guild_config ' +
+          'WHERE guild_id = ? AND module_id = ?'
+        ).all(guild_id, module_id) as { key: string; value: string }[];
+      },
+      replaceModuleConfig: (
+        guild_id: string,
+        module_id: string,
+        entries: { key: string; value: string }[]
+      ): void => {
+        UPSERT_MANY(guild_id, module_id, entries, true);
+      },
+      upsertKeys: (
+        guild_id: string,
+        module_id: string,
+        entries: { key: string; value: string }[]
+      ): void => {
+        UPSERT_MANY(guild_id, module_id, entries, false);
+      },
+      deleteModuleConfig: (
+        guild_id: string,
+        module_id: string
+      ): number => {
+        return CONNECTION.prepare(
+          'DELETE FROM nano_guild_config ' +
+          'WHERE guild_id = ? AND module_id = ?'
+        ).run(guild_id, module_id).changes;
+      },
+      listGuildsFor: (module_id: string): string[] => {
+        const ROWS = CONNECTION.prepare(
+          'SELECT DISTINCT guild_id FROM nano_guild_config ' +
+          'WHERE module_id = ?'
+        ).all(module_id) as { guild_id: string }[];
+        return ROWS.map((row: { guild_id: string }): string => {
+          return row.guild_id;
+        });
+      },
+    };
+  }
+
   close(): void {
     this.connection.close();
   }
@@ -167,6 +249,15 @@ export class DatabaseService {
       'run_at INTEGER NOT NULL, ' +
       'payload TEXT, ' +
       'PRIMARY KEY (module_id, name))'
+    );
+    this.connection.exec(
+      'CREATE TABLE IF NOT EXISTS nano_guild_config (' +
+      'guild_id TEXT NOT NULL, ' +
+      'module_id TEXT NOT NULL, ' +
+      'key TEXT NOT NULL, ' +
+      'value TEXT NOT NULL, ' +
+      'updated_at INTEGER NOT NULL, ' +
+      'PRIMARY KEY (guild_id, module_id, key))'
     );
   }
 }

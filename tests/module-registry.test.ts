@@ -165,4 +165,39 @@ describe('ModuleRegistry', (): void => {
       details: 'cache cold',
     });
   });
+
+  it('serves a module API only while enabled and compatible',
+    async (): Promise<void> => {
+      const REGISTRY = new ModuleRegistry(createFakeBot());
+      const API = {
+        grantRole: (): string => {
+          return 'granted';
+        },
+      };
+      await REGISTRY.register(createModule({
+        name: 'roles',
+        provides: API,
+        api_version: '1',
+      }), 'local');
+
+      expect(REGISTRY.getModuleApi('roles')).toBe(API);
+      expect(REGISTRY.getModuleApi('roles', { api_version: '1' }))
+        .toBe(API);
+      expect(REGISTRY.getModuleApi('roles', { api_version: '2' }))
+        .toBeUndefined();
+      expect(REGISTRY.getModuleApi('absent')).toBeUndefined();
+
+      await REGISTRY.disable('roles');
+      expect(REGISTRY.getModuleApi('roles')).toBeUndefined();
+
+      await REGISTRY.enable('roles');
+      expect(REGISTRY.getModuleApi('roles')).toBe(API);
+    });
+
+  it('returns undefined for a module that offers no API',
+    async (): Promise<void> => {
+      const REGISTRY = new ModuleRegistry(createFakeBot());
+      await REGISTRY.register(createModule({ name: 'plain' }), 'local');
+      expect(REGISTRY.getModuleApi('plain')).toBeUndefined();
+    });
 });

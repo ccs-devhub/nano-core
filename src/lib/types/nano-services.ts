@@ -1,6 +1,7 @@
 import type { NanoCache } from '@/services/cache.js';
 import type { CooldownManager } from '@/services/cooldown.js';
 import type { DatabaseService } from '@/services/database.js';
+import type { GuildStore } from '@/services/guild-store.js';
 import type { LifecycleManager } from '@/services/lifecycle.js';
 import type { NanoScheduler } from '@/services/scheduler.js';
 
@@ -15,4 +16,5 @@ export interface NanoServices {
   cache: NanoCache;
   lifecycle: LifecycleManager;
   database: DatabaseService | null;
+  guild_store: GuildStore;
 }

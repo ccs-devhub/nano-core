@@ -38,6 +38,7 @@ export * from '@/services/cache.js';
 export * from '@/services/cooldown.js';
 export * from '@/services/database.js';
 export * from '@/services/errors.js';
+export * from '@/services/guild-store.js';
 export * from '@/services/lifecycle.js';
 export * from '@/services/logger.js';
 export * from '@/services/scheduler.js';

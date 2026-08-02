@@ -90,6 +90,14 @@ export interface NanoModule {
   components?: Record<string, NanoComponentHandler>;
   /** Scheduler task handlers keyed by job name. */
   tasks?: Record<string, NanoTaskHandler>;
+  /**
+   * The API surface this module offers other modules, served through
+   * ModuleRegistry.getModuleApi(). Consumers must resolve it lazily
+   * at every call site — never capture it at onEnable.
+   */
+  provides?: Record<string, unknown>;
+  /** Coarse contract version for `provides` (compared exactly). */
+  api_version?: string;
   /** Path to the module's declarative TUI panel manifest (JSON). */
   tui?: string;
   onEnable?(bot: Client): Promise<void> | void;

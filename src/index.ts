@@ -20,6 +20,7 @@ import { NanoCache } from '@/services/cache.js';
 import { CooldownManager } from '@/services/cooldown.js';
 import { DatabaseService } from '@/services/database.js';
 import { installProcessGuards } from '@/services/errors.js';
+import { GuildStore } from '@/services/guild-store.js';
 import { LifecycleManager } from '@/services/lifecycle.js';
 import { createLogger, getLogger } from '@/services/logger.js';
 import { NanoScheduler } from '@/services/scheduler.js';
@@ -112,6 +113,10 @@ if (DATABASE) {
 const COOLDOWNS = new CooldownManager();
 const CACHE = new NanoCache();
 const LIFECYCLE = new LifecycleManager(BOT);
+const GUILD_STORE = new GuildStore(
+  DATABASE ? DATABASE.guildConfigPersistence() : null,
+  CACHE
+);
 
 BOT.services = {
   cooldowns: COOLDOWNS,
@@ -119,6 +124,7 @@ BOT.services = {
   cache: CACHE,
   lifecycle: LIFECYCLE,
   database: DATABASE,
+  guild_store: GUILD_STORE,
 };
 
 const REGISTRY = new ModuleRegistry(BOT, {
