@@ -26,6 +26,7 @@ import {
   listMembers,
   listRoles,
   paginate,
+  PermissionFlagsBits,
   SlashCommandBuilder
 } from '@ccs-devhub/nano-core';
 
@@ -67,6 +68,7 @@ function synapseConfig(): Required<SynapseConfig> {
 const DATA = new SlashCommandBuilder()
   .setName('synapse')
   .setDescription('Base sensory module: scan and inspect this server.')
+  .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
   .addSubcommand(
     (sub: SlashCommandSubcommandBuilder): SlashCommandSubcommandBuilder => {
       return sub.setName('scan')

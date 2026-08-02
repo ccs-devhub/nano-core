@@ -1,0 +1,45 @@
+# Per-bot compose project. Instance layout on the host:
+#   /srv/bots/<bot>/{compose.yml, .env, state/}
+#
+# state/ is the single mounted volume AND the working directory:
+# loadConfig, the sqlite db (data/nano.db) and .nano/ are all
+# cwd-rooted, so everything durable lands on the volume. A DIRECTORY
+# mount is mandatory - a single-file bind mount breaks the atomic
+# temp+rename config write (EBUSY).
+#
+# The instance's state/nano.config.json:
+#   - modules listed by ABSOLUTE baked path, e.g. "/app/modules/synapse"
+#   - "logging": { "pretty": false }  (pino-pretty is not in the image)
+#   - NO dev_guild_id: prod instances sync commands at GLOBAL scope
+#   - PROD NO-BRIDGE LAW: prod instances do NOT list the mcp module
+#
+# .env (mode 0600): DISCORD_TOKEN, CLIENT_ID. Never in the image,
+# never in this file.
+
+services:
+  bot:
+    image: nano-core:0.3.1
+    restart: unless-stopped
+    env_file: .env
+    working_dir: /state
+    user: "10001"
+    volumes:
+      - ./state:/state
+    mem_limit: 512m
+    stop_grace_period: 20s
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+    # Only if a bridge is ever deliberately re-enabled (dev, never
+    # prod): publish loopback-only, one port per bot (3778+i).
+    # ports:
+    #   - "127.0.0.1:3778:3777"

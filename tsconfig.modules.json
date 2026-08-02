@@ -1,0 +1,19 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "noEmit": false,
+        "rootDir": "modules",
+        "outDir": "dist-modules",
+        "declaration": false,
+        "declarationMap": false,
+        "paths": {
+            "@ccs-devhub/nano-core": ["dist/lib/index.d.ts"]
+        }
+    },
+    "include": [
+        "modules"
+    ],
+    "exclude": [
+        "modules/**/node_modules"
+    ]
+}

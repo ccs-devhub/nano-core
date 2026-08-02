@@ -2,7 +2,7 @@ import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import { createServer } from 'node:http';
 
 import type { McpGates } from './tools.js';
-import { registerNanoTools } from './tools.js';
+import { DEFAULT_DENIED_TOOLS, registerNanoTools } from './tools.js';
 
 import type { Client, NanoHealthReport } from '@ccs-devhub/nano-core';
 import {
@@ -26,6 +26,8 @@ interface McpConfig {
   port?: number;
   allow_write?: boolean;
   allow_moderation?: boolean;
+  /** Tool-name denylist override; defaults to DEFAULT_DENIED_TOOLS. */
+  denied_tools?: string[];
   /** Config directory override (tests); defaults to process.cwd(). */
   config_root?: string;
 }
@@ -55,6 +57,7 @@ let boot_overrides: McpConfig = {};
 let active_gates: McpGates = {
   allow_write: false,
   allow_moderation: false,
+  denied_tools: DEFAULT_DENIED_TOOLS,
 };
 
 /**
@@ -72,7 +75,22 @@ function resolveGates(): McpGates {
   return {
     allow_write: CONFIG.allow_write === true,
     allow_moderation: CONFIG.allow_moderation === true,
+    denied_tools: CONFIG.denied_tools ?? DEFAULT_DENIED_TOOLS,
   };
+}
+
+function gatesEqual(a: McpGates, b: McpGates): boolean {
+  return a.allow_write === b.allow_write &&
+    a.allow_moderation === b.allow_moderation &&
+    a.denied_tools.join(',') === b.denied_tools.join(',');
+}
+
+function describeGates(gates: McpGates): string {
+  const DENIED = gates.denied_tools.length > 0
+    ? gates.denied_tools.join(',')
+    : 'none';
+  return `write=${gates.allow_write}, ` +
+    `moderation=${gates.allow_moderation}, denied=[${DENIED}]`;
 }
 
 function rpcError(
@@ -103,7 +121,17 @@ async function handlePost(
   req: IncomingMessage,
   res: ServerResponse
 ): Promise<void> {
-  active_gates = resolveGates();
+  const RESOLVED = resolveGates();
+
+  /* Every gate change is logged: the gates decide what a bridge
+     token can do, so a flip must leave an audit trail. */
+  if (!gatesEqual(RESOLVED, active_gates)) {
+    const CHANGE =
+      `${describeGates(active_gates)} -> ${describeGates(RESOLVED)}`;
+    getModuleLogger('mcp').info(`MCP gates changed: ${CHANGE}`);
+  }
+
+  active_gates = RESOLVED;
   const SERVER = buildServer(bot, active_gates);
   const TRANSPORT = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
@@ -201,8 +229,7 @@ export async function startMcpServer(
       status_detail = `listening on http://${BIND_HOST}:${active_port}/mcp`;
       LOGGER.info(
         `MCP endpoint ${status_detail} (${tool_count} tools, ` +
-        `write=${active_gates.allow_write}, ` +
-        `moderation=${active_gates.allow_moderation})`
+        `${describeGates(active_gates)})`
       );
       resolve();
     });

@@ -17,6 +17,7 @@ import type {
   RegisteredModule
 } from '@/registry/module-registry.js';
 import { loadConfig } from '@/registry/nano-config.js';
+import { isApplicationOwner } from '@/services/permission.js';
 import { moduleKind } from '@/types/nano-module.js';
 
 const MAX_EMBED_FIELDS = 25;
@@ -132,6 +133,24 @@ async function handleToggle(
   interaction: ChatInputCommandInteraction,
   enable: boolean
 ): Promise<void> {
+  /* Owner gate (GR1/GR2): enable/disable rewrites the HOST config,
+     process-globally — a guild-side permission can never authorize
+     that (admins can re-grant command permissions in Integrations). */
+  const IS_OWNER = await isApplicationOwner(
+    interaction.client,
+    interaction.user.id
+  );
+
+  if (!IS_OWNER) {
+    await interaction.reply({
+      content: 'Only the bot owner can change module state — it ' +
+        'alters the host configuration for every server this bot ' +
+        'serves.',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
   const NAME = interaction.options.getString('name', true);
   const RESULT = enable
     ? await interaction.client.nano.enable(NAME)

@@ -81,7 +81,20 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 export interface McpGates {
   allow_write: boolean;
   allow_moderation: boolean;
+  /** Tool names never registered, whatever the other gates say. */
+  denied_tools: string[];
 }
+
+/**
+ * The bridge token is otherwise guild-admin-equivalent: edit_role can
+ * grant Administrator. These stay denied unless the owner explicitly
+ * overrides module_config.mcp.denied_tools.
+ */
+export const DEFAULT_DENIED_TOOLS: string[] = [
+  'edit_role',
+  'set_role_positions',
+  'add_role_to_member',
+];
 
 interface ToolText {
   type: 'text';
@@ -95,9 +108,6 @@ interface ToolOutput {
 }
 
 const JSON_INDENT = 2;
-const READ_TOOL_COUNT = 24;
-const WRITE_TOOL_COUNT = 39;
-const MODERATION_TOOL_COUNT = 4;
 
 const OVERWRITE_INPUT = z.object({
   id: z.string().describe('Role or member id'),
@@ -271,25 +281,48 @@ async function guarded(
   return wrap(await run());
 }
 
-/** Register every gated-in tool; returns how many were registered. */
+type RegisterToolFn = McpServer['registerTool'];
+
+/**
+ * Register every gated-in tool; returns how many were registered.
+ * Denied tools are intercepted at the registration seam, so they
+ * never appear in tools/list and can never execute.
+ */
 export function registerNanoTools(
   server: McpServer,
   bot: Client,
   gates: McpGates
 ): number {
-  registerReadTools(server, bot);
-  let count = READ_TOOL_COUNT;
+  const DENIED = new Set(gates.denied_tools);
+  const ORIGINAL = server.registerTool.bind(server) as
+    (...args: unknown[]) => unknown;
+  let registered = 0;
 
-  if (gates.allow_write) {
-    registerWriteTools(server, bot);
-    count += WRITE_TOOL_COUNT;
-  }
+  const GATED = ((name: string, ...rest: unknown[]): unknown => {
+    if (DENIED.has(name)) {
+      return undefined;
+    }
+    registered += 1;
+    return ORIGINAL(name, ...rest);
+  }) as RegisterToolFn;
 
-  if (gates.allow_moderation) {
-    registerModerationTools(server, bot);
-    count += MODERATION_TOOL_COUNT;
+  const PATCHABLE = server as { registerTool: RegisterToolFn };
+  PATCHABLE.registerTool = GATED;
+
+  try {
+    registerReadTools(server, bot);
+
+    if (gates.allow_write) {
+      registerWriteTools(server, bot);
+    }
+
+    if (gates.allow_moderation) {
+      registerModerationTools(server, bot);
+    }
+  } finally {
+    PATCHABLE.registerTool = ORIGINAL as RegisterToolFn;
   }
-  return count;
+  return registered;
 }
 
 function registerReadTools(server: McpServer, bot: Client): void {
@@ -571,7 +604,7 @@ function registerWriteTools(server: McpServer, bot: Client): void {
       theme: z.string().optional()
         .describe('Registered theme name'),
       files: z.array(z.string()).optional()
-        .describe('Attachment sources: https URLs or local file paths'),
+        .describe('Attachment sources: https URLs only'),
       reply_to: z.string().optional()
         .describe('Message id this message replies to (same channel)'),
       poll_question: z.string().optional()

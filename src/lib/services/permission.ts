@@ -79,6 +79,39 @@ export async function checkRoleHierarchy(
   });
 }
 
+/**
+ * The owner gate (GR1/GR2): host-level configuration is process-global
+ * state shared by every guild this bot serves — only the application
+ * owner (or a member of its team) may mutate it. Guild-granted
+ * permissions can never satisfy this check, so a foreign guild admin
+ * re-granting command permissions in Integrations gains nothing.
+ */
+export async function isApplicationOwner(
+  bot: Client,
+  user_id: string
+): Promise<boolean> {
+  let application = bot.application;
+
+  if (!application) {
+    return false;
+  }
+
+  if (!application.owner) {
+    application = await application.fetch();
+  }
+
+  const OWNER = application.owner;
+
+  if (!OWNER) {
+    return false;
+  }
+
+  if ('members' in OWNER) {
+    return OWNER.members.has(user_id);
+  }
+  return OWNER.id === user_id;
+}
+
 function checkMemberPermissions(
   member: GuildMember,
   perms: PermissionResolvable[],

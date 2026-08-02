@@ -22,6 +22,7 @@ const HTTP_METHOD_NOT_ALLOWED = 405;
 const READ_TOOLS = 24;
 const WRITE_TOOLS = 39;
 const ALL_TOOLS = 67;
+const DEFAULT_DENIED = 3;
 
 function fakeBot(ready: boolean = true): Client {
   return {
@@ -186,6 +187,7 @@ describe('mcp module server', (): void => {
       port: 0,
       allow_write: true,
       allow_moderation: true,
+      denied_tools: [],
     });
 
     const RESULT = await rpc('tools/list', {});
@@ -209,6 +211,29 @@ describe('mcp module server', (): void => {
     expect(NAMES).toContain('kick_member');
   });
 
+  it('denies the role-escalation tools by default', async ():
+  Promise<void> => {
+    await startMcpServer(fakeBot(), {
+      port: 0,
+      allow_write: true,
+      allow_moderation: true,
+    });
+
+    const RESULT = await rpc('tools/list', {});
+    const NAMES = (RESULT.body.result?.tools ?? [])
+      .map((tool: { name: string }): string => {
+        return tool.name;
+      });
+
+    expect(NAMES).toHaveLength(ALL_TOOLS - DEFAULT_DENIED);
+    expect(NAMES).not.toContain('edit_role');
+    expect(NAMES).not.toContain('set_role_positions');
+    expect(NAMES).not.toContain('add_role_to_member');
+    expect(NAMES).toContain('create_role');
+    expect(NAMES).toContain('remove_role_from_member');
+    expect(mcpStatus().tool_count).toBe(ALL_TOOLS - DEFAULT_DENIED);
+  });
+
   it('re-reads gates from nano.config.json on every request', async ():
   Promise<void> => {
     const ROOT = await mkdtemp(join(tmpdir(), 'nano-mcp-gates-'));
@@ -230,9 +255,11 @@ describe('mcp module server', (): void => {
       .map((tool: { name: string }): string => {
         return tool.name;
       });
-    expect(NAMES).toHaveLength(READ_TOOLS + WRITE_TOOLS);
+    const EXPECTED = READ_TOOLS + WRITE_TOOLS - DEFAULT_DENIED;
+    expect(NAMES).toHaveLength(EXPECTED);
     expect(NAMES).toContain('edit_channel');
-    expect(mcpStatus().tool_count).toBe(READ_TOOLS + WRITE_TOOLS);
+    expect(NAMES).not.toContain('edit_role');
+    expect(mcpStatus().tool_count).toBe(EXPECTED);
     await rm(ROOT, { recursive: true, force: true });
   });
 

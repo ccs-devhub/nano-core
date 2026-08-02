@@ -1,6 +1,8 @@
 import type { Client } from 'discord.js';
 import { Events, RESTEvents } from 'discord.js';
 
+import { EXIT_CODE_INVALIDATED, EXIT_CODE_SHUTDOWN_FAILED } from
+  '@/constants/nano.js';
 import type { ModuleHealth, ModuleRegistry } from
   '@/registry/module-registry.js';
 import { getLogger } from '@/services/logger.js';
@@ -80,10 +82,19 @@ export class LifecycleManager {
     });
     this.bot.on(Events.Invalidated, (): void => {
       getLogger().fatal(
-        'Session invalidated — a full process restart is required ' +
-        '(never re-login on the same client).'
+        'Session invalidated — exiting so the supervisor restarts ' +
+        'the process (never re-login on the same client).'
       );
       this.emit('invalidated');
+      /* Staying alive here turns a supervised 5-second restart into
+         a silent outage: restart policies only fire on exit. */
+      this.shutdown()
+        .then((): void => {
+          process.exit(EXIT_CODE_INVALIDATED);
+        })
+        .catch((): void => {
+          process.exit(EXIT_CODE_INVALIDATED);
+        });
     });
     this.bot.on(Events.ShardDisconnect, (): void => {
       this.emit('shard-disconnect');
@@ -118,8 +129,9 @@ export class LifecycleManager {
         .then((): void => {
           process.exit(0);
         })
-        .catch((): void => {
-          process.exit(1);
+        .catch((error: unknown): void => {
+          getLogger().error({ err: error }, 'Shutdown failed');
+          process.exit(EXIT_CODE_SHUTDOWN_FAILED);
         });
     };
     process.once('SIGINT', (): void => {

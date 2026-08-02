@@ -1,0 +1,39 @@
+.git
+.gitignore
+.github
+.claude
+.cache
+.temp
+.husky
+
+# Secrets and live state NEVER enter an image layer (EX5).
+.env
+.env-template
+.nano
+data
+*.db
+*.db-wal
+*.db-shm
+nano.config.json
+nano.style.toml
+mise.local.toml
+
+# Rebuilt inside the build stage.
+node_modules
+modules/*/node_modules
+dist
+dist-modules
+*.tsbuildinfo
+
+# Workstation-only surfaces.
+tests
+docs
+README.org
+README-EN.org
+LICENSE
+eslint.config.mjs
+vitest.config.ts
+nano.config-template.json
+Dockerfile
+compose.example.yml
+.dockerignore

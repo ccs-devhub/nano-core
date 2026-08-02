@@ -65,7 +65,7 @@ const INDENTATION_SPACES = 2;
 
 export default defineConfig([
   {
-    ignores: ['dist/**', 'node_modules/**', '.cache/**'],
+    ignores: ['dist/**', 'dist-modules/**', 'node_modules/**', '.cache/**'],
   },
   {
     files: ['**/*.{js,ts,tsx,mjs,cjs,mts,cts}'],

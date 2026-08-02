@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { Client, Collection, version as discordjs_version } from
   'discord.js';
 
-import { NANO_VERSION } from '@/constants/nano.js';
+import { EXIT_CODE_LOGIN_FAILED, NANO_VERSION } from
+  '@/constants/nano.js';
 import { createKernelModule } from '@/core/kernel/index.js';
 import { printBootBanner } from '@/misc/utility/banner.js';
 import { syncCommands } from '@/misc/utility/command-sync.js';
@@ -137,15 +138,17 @@ installProcessGuards({
 });
 LIFECYCLE.bindClientEvents();
 LIFECYCLE.installSignalHandlers();
-LIFECYCLE.addShutdownTask((): void => {
-  SCHEDULER.stopAll();
-});
-
+/* Shutdown runs LIFO: the DB close is registered FIRST so it runs
+   LAST — the scheduler must stop while the DB is still open. */
 if (DATABASE) {
   LIFECYCLE.addShutdownTask((): void => {
     DATABASE.close();
   });
 }
+
+LIFECYCLE.addShutdownTask((): void => {
+  SCHEDULER.stopAll();
+});
 
 /* The kernel (dispatcher + /module manager) is protected: always on. */
 await REGISTRY.register(KERNEL_MODULE, 'core', true);
@@ -192,7 +195,7 @@ if (TOKEN) {
   if (!LOGIN.ok) {
     getLogger().fatal({ error: LOGIN.error }, 'Login failed — exiting.');
     await LIFECYCLE.shutdown();
-    process.exit(1);
+    process.exit(EXIT_CODE_LOGIN_FAILED);
   }
 } else {
   getLogger().error('No token provided — bot login skipped.');

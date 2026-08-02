@@ -1,6 +1,7 @@
 import type { ChatInputCommandInteraction } from 'discord.js';
 import { MessageFlags } from 'discord.js';
 
+import { EXIT_CODE_FATAL_EXCEPTION } from '@/constants/nano.js';
 import { getLogger } from '@/services/logger.js';
 
 /**
@@ -42,7 +43,7 @@ export function installProcessGuards(
     getLogger().fatal({ err: error }, 'Uncaught exception — shutting down');
     Promise.resolve(options.onFatal?.())
       .finally((): void => {
-        process.exit(1);
+        process.exit(EXIT_CODE_FATAL_EXCEPTION);
       });
   });
 }

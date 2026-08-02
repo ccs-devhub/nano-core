@@ -1,4 +1,5 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, renameSync, writeFileSync } from
+  'node:fs';
 import { join } from 'node:path';
 
 import { z } from 'zod';
@@ -119,7 +120,14 @@ export function saveConfig(
   root: string = process.cwd()
 ): void {
   const CONFIG_PATH = join(root, CONFIG_FILE_NAME);
-  writeFileSync(CONFIG_PATH, `${JSON.stringify(config, null, JSON_INDENT)}\n`);
+  /* Temp + rename: a truncated config silently loads FULL DEFAULTS
+     (empty module list), so the write must be atomic. */
+  const TEMP_PATH = `${CONFIG_PATH}.tmp`;
+  writeFileSync(
+    TEMP_PATH,
+    `${JSON.stringify(config, null, JSON_INDENT)}\n`
+  );
+  renameSync(TEMP_PATH, CONFIG_PATH);
 }
 
 /** Persist a module's enabled/disabled state. */

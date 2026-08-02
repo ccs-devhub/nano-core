@@ -40,7 +40,7 @@ export interface NanoMessagePayload {
   content?: string;
   embed?: EmbedSpec;
   theme?: string;
-  /** Attachment sources: https URLs or local file paths. */
+  /** Attachment sources: https URLs only. */
   files?: string[];
   /** Message id this message replies to (same channel). */
   reply_to?: string;
@@ -95,6 +95,7 @@ export async function editMessage(
     const EDITED = await MESSAGE.edit({
       content: OPTIONS.content,
       embeds: OPTIONS.embeds,
+      allowedMentions: OPTIONS.allowedMentions,
     });
     return toMessageSummary(EDITED);
   });
@@ -235,8 +236,15 @@ const DEFAULT_POLL_HOURS = 24;
 export function buildSendOptions(
   payload: string | NanoMessagePayload
 ): MessageCreateOptions {
+  /* Nothing rendered into a message may ping: no user/role/everyone
+     parsing, no reply ping. Explicit opt-ins come later per feature. */
+  const NO_MENTIONS: MessageCreateOptions['allowedMentions'] = {
+    parse: [],
+    repliedUser: false,
+  };
+
   if (typeof payload === 'string') {
-    return { content: payload };
+    return { content: payload, allowedMentions: NO_MENTIONS };
   }
 
   return {
@@ -244,12 +252,27 @@ export function buildSendOptions(
     embeds: payload.embed
       ? [buildEmbed(payload.embed, payload.theme)]
       : undefined,
-    files: payload.files,
+    files: payload.files ? assertHttpsFiles(payload.files) : undefined,
     reply: payload.reply_to
       ? { messageReference: payload.reply_to }
       : undefined,
     poll: payload.poll ? toPollData(payload.poll) : undefined,
+    allowedMentions: NO_MENTIONS,
   };
+}
+
+/* Local paths are forbidden: a file source like /proc/self/environ
+   would upload process secrets to a Discord channel. */
+function assertHttpsFiles(sources: string[]): string[] {
+  for (const _source of sources) {
+    if (!_source.startsWith('https://')) {
+      throw new Error(
+        `File source '${_source}' rejected — only https: URLs are ` +
+        'accepted.'
+      );
+    }
+  }
+  return sources;
 }
 
 function toPollData(spec: NanoPollSpec): PollData {
