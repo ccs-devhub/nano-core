@@ -205,6 +205,96 @@ describe('kernel dispatcher', (): void => {
     expect(INTERACTION.reply).not.toHaveBeenCalled();
   });
 
+  it('invokes post-command hooks of every enabled module after ' +
+    'success', async (): Promise<void> => {
+    const { client: _client, registry: _registry } = createClient();
+    const EXECUTE = vi.fn(async (): Promise<void> => {});
+    const OWN_HOOK = vi.fn(async (): Promise<void> => {});
+    const OBSERVER_HOOK = vi.fn(async (): Promise<void> => {});
+    await _registry.register(
+      moduleWithCommand(EXECUTE, { postCommand: OWN_HOOK }),
+      'local'
+    );
+    await _registry.register({
+      name: 'observer-module',
+      version: '1.0.0',
+      postCommand: OBSERVER_HOOK,
+    }, 'local');
+
+    const INTERACTION = slashInteraction(_client, 'probe');
+    INTERACTION.options = {
+      getSubcommand: (): string | null => {
+        return 'sync';
+      },
+      getSubcommandGroup: (): string | null => {
+        return null;
+      },
+    };
+    await dispatcher.execute(INTERACTION as never);
+
+    const EXPECTED = expect.objectContaining({
+      command_name: 'probe',
+      subcommand_path: 'sync',
+      user_id: 'u1',
+      guild_id: 'g1',
+      channel_id: 'c1',
+    });
+    expect(OWN_HOOK).toHaveBeenCalledWith(EXPECTED);
+    expect(OBSERVER_HOOK).toHaveBeenCalledWith(EXPECTED);
+  });
+
+  it('skips post-command hooks when the command fails', async ():
+  Promise<void> => {
+    const { client: _client, registry: _registry } = createClient();
+    const HOOK = vi.fn(async (): Promise<void> => {});
+    await _registry.register(moduleWithCommand(
+      vi.fn(async (): Promise<void> => {
+        throw new Error('module exploded');
+      }),
+      { postCommand: HOOK }
+    ), 'local');
+
+    await dispatcher.execute(slashInteraction(_client, 'probe') as never);
+
+    expect(HOOK).not.toHaveBeenCalled();
+  });
+
+  it('skips hooks of disabled modules and isolates hook failures',
+    async (): Promise<void> => {
+      const { client: _client, registry: _registry } = createClient();
+      const EXECUTE = vi.fn(async (): Promise<void> => {});
+      const THROWING_HOOK = vi.fn(async (): Promise<void> => {
+        throw new Error('hook exploded');
+      });
+      const DISABLED_HOOK = vi.fn(async (): Promise<void> => {});
+      const SURVIVING_HOOK = vi.fn(async (): Promise<void> => {});
+      await _registry.register(
+        moduleWithCommand(EXECUTE, { postCommand: THROWING_HOOK }),
+        'local'
+      );
+      await _registry.register({
+        name: 'disabled-module',
+        version: '1.0.0',
+        postCommand: DISABLED_HOOK,
+      }, 'local');
+      await _registry.register({
+        name: 'surviving-module',
+        version: '1.0.0',
+        postCommand: SURVIVING_HOOK,
+      }, 'local');
+      await _registry.disable('disabled-module');
+
+      const INTERACTION = slashInteraction(_client, 'probe');
+      await dispatcher.execute(INTERACTION as never);
+
+      expect(EXECUTE).toHaveBeenCalledTimes(1);
+      expect(THROWING_HOOK).toHaveBeenCalledTimes(1);
+      expect(DISABLED_HOOK).not.toHaveBeenCalled();
+      expect(SURVIVING_HOOK).toHaveBeenCalledTimes(1);
+      /* the hook failure never surfaced to the user */
+      expect(INTERACTION.reply).not.toHaveBeenCalled();
+    });
+
   it('answers autocomplete with empty choices on failure', async ():
   Promise<void> => {
     const { client: _client, registry: _registry } = createClient();

@@ -16,6 +16,14 @@ export const DEFAULT_REGISTRY_URL =
   'https://raw.githubusercontent.com/ccs-devhub/nano-store/main/' +
   'registry.json';
 const DEFAULT_STORE_TTL_HOURS = 24;
+const DEFAULT_HEARTBEAT_INTERVAL_S = 300;
+const DEFAULT_MESSAGE_CACHE_MAX = 100;
+const DEFAULT_MEMBER_CACHE_MAX = 1000;
+const DEFAULT_USER_CACHE_MAX = 1000;
+const DEFAULT_MESSAGE_SWEEP_INTERVAL_S = 1800;
+const DEFAULT_MESSAGE_MAX_AGE_S = 1800;
+const DEFAULT_RECONCILE_LOOKBACK_D = 7;
+const DEFAULT_NANO_CACHE_MAX = 20000;
 
 export const MODULE_PROVENANCE_SCHEMA = z.object({
   name: z.string(),
@@ -42,6 +50,7 @@ export const NANO_CONFIG_SCHEMA = z.object({
     dev_guild_id: z.string().optional(),
   }).default({ name: 'nano-bot' }),
   intents: z.array(z.string()).default(['Guilds']),
+  partials: z.array(z.string()).default([]),
   modules: z.array(MODULE_ENTRY_SCHEMA).default([]),
   disabled: z.array(z.string()).default([]),
   database: z.object({
@@ -62,6 +71,46 @@ export const NANO_CONFIG_SCHEMA = z.object({
     cache_ttl_hours: DEFAULT_STORE_TTL_HOURS,
   }),
   module_config: z.record(z.string(), z.unknown()).default({}),
+  /* PF5: multi-guild cooldown stamps alone exceed the old 5000. */
+  nano_cache_max: z.number().default(DEFAULT_NANO_CACHE_MAX),
+  observability: z.object({
+    heartbeat_interval_s: z.number()
+      .default(DEFAULT_HEARTBEAT_INTERVAL_S),
+  }).default({ heartbeat_interval_s: DEFAULT_HEARTBEAT_INTERVAL_S }),
+  /* (f): windowed recoveries never dig past this bound. */
+  reconcile: z.object({
+    max_lookback_d: z.number().default(DEFAULT_RECONCILE_LOOKBACK_D),
+  }).default({ max_lookback_d: DEFAULT_RECONCILE_LOOKBACK_D }),
+  /* S1: the sharding SEAM. The fleet model is the shard manager —
+     one shard per container; env SHARD_ID/SHARD_COUNT override. */
+  sharding: z.object({
+    shard_id: z.number().optional(),
+    shard_count: z.number().optional(),
+  }).default({}),
+  /* S2: cache discipline. RSS grows with cached MEMBERS, not
+     guilds — capped by default, every value overridable. */
+  caching: z.object({
+    message_cache_max: z.number().default(DEFAULT_MESSAGE_CACHE_MAX),
+    member_cache_max: z.number().default(DEFAULT_MEMBER_CACHE_MAX),
+    user_cache_max: z.number().default(DEFAULT_USER_CACHE_MAX),
+    presence_cache: z.boolean().default(false),
+    reaction_cache: z.boolean().default(false),
+    invite_cache: z.boolean().default(false),
+    scheduled_event_cache: z.boolean().default(false),
+    message_sweep_interval_s: z.number()
+      .default(DEFAULT_MESSAGE_SWEEP_INTERVAL_S),
+    message_max_age_s: z.number().default(DEFAULT_MESSAGE_MAX_AGE_S),
+  }).default({
+    message_cache_max: DEFAULT_MESSAGE_CACHE_MAX,
+    member_cache_max: DEFAULT_MEMBER_CACHE_MAX,
+    user_cache_max: DEFAULT_USER_CACHE_MAX,
+    presence_cache: false,
+    reaction_cache: false,
+    invite_cache: false,
+    scheduled_event_cache: false,
+    message_sweep_interval_s: DEFAULT_MESSAGE_SWEEP_INTERVAL_S,
+    message_max_age_s: DEFAULT_MESSAGE_MAX_AGE_S,
+  }),
 });
 
 export type NanoConfig = z.infer<typeof NANO_CONFIG_SCHEMA>;
@@ -83,7 +132,12 @@ export function moduleEntryName(entry: ModuleEntry): string {
   return typeof entry === 'string' ? entry : entry.name;
 }
 
-/** Load nano.config.json, falling back to defaults on any error. */
+/**
+ * Load nano.config.json. A missing file yields defaults. An EXISTING
+ * file that is unreadable OR schema-invalid THROWS (GR12) — zod's
+ * safeParse is all-or-nothing, so one bad field would otherwise
+ * replace the whole config and re-register commands globally.
+ */
 export function loadConfig(root: string = process.cwd()): NanoConfig {
   const CONFIG_PATH = join(root, CONFIG_FILE_NAME);
 
@@ -96,21 +150,26 @@ export function loadConfig(root: string = process.cwd()): NanoConfig {
     const PARSED = NANO_CONFIG_SCHEMA.safeParse(RAW);
 
     if (!PARSED.success) {
-      process.stdout.write(
-        `[ERROR] Invalid ${CONFIG_FILE_NAME}: ` +
-        `${PARSED.error.issues.map((issue: z.core.$ZodIssue): string => {
-          return `${issue.path.join('.')}: ${issue.message}`;
-        }).join('; ')}. Using defaults.\n`
+      const ISSUES = PARSED.error.issues
+        .map((issue: z.core.$ZodIssue): string => {
+          return `${issue.path.join('.')} ${issue.message}`;
+        })
+        .join(', ');
+      throw new Error(
+        `Invalid ${CONFIG_FILE_NAME}, ${ISSUES}. Refusing to boot ` +
+        'on defaults, repair the file.'
       );
-      return defaultConfig();
     }
     return PARSED.data;
   } catch (error: unknown) {
-    process.stdout.write(
-      `[ERROR] Unreadable ${CONFIG_FILE_NAME}: ${String(error)}. ` +
-      'Using defaults.\n'
+    /* GR12: an EXISTING but unreadable (truncated/corrupt) config
+       must fail LOUDLY — silently defaulting would drop every module
+       and re-register commands at GLOBAL scope in every guild. A
+       missing file (fresh install) still defaults above. */
+    throw new Error(
+      `Unreadable ${CONFIG_FILE_NAME}: ${String(error)}. Refusing ` +
+      'to boot with defaults — repair or remove the file.'
     );
-    return defaultConfig();
   }
 }
 

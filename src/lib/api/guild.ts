@@ -154,16 +154,28 @@ export interface AuditLogSummary {
 
 const DEFAULT_AUDIT_LIMIT = 25;
 
-/** Recent audit-log entries, newest first. */
+/**
+ * Recent audit-log entries, newest first. EX17: pass `type` (an
+ * AuditLogEvent number) and/or `user_id` (the executor) so an
+ * attribution can never be poisoned by a concurrent unrelated entry.
+ */
 export async function fetchAuditLog(
   bot: Client,
   guild_id: string,
-  limit: number = DEFAULT_AUDIT_LIMIT
+  limit: number = DEFAULT_AUDIT_LIMIT,
+  filter: { type?: number; user_id?: string } = {}
 ): Promise<NanoResult<AuditLogSummary[]>> {
   return runSafe(async (): Promise<AuditLogSummary[]> => {
     const GUILD = await requireGuild(bot, guild_id);
-    const LOG = await GUILD.fetchAuditLogs({ limit });
-    return Array.from(LOG.entries.values())
+    const LOG = await GUILD.fetchAuditLogs({
+      limit,
+      type: filter.type,
+      user: filter.user_id,
+    });
+    const ENTRIES = Array.from(
+      LOG.entries.values()
+    ) as GuildAuditLogsEntry[];
+    return ENTRIES
       .map((entry: GuildAuditLogsEntry): AuditLogSummary => {
         return {
           id: entry.id,

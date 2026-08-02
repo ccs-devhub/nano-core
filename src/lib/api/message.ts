@@ -215,6 +215,31 @@ export async function removeOwnReaction(
   });
 }
 
+/**
+ * Remove ANOTHER user's reaction (panel max/exclusive enforcement).
+ * The bot needs ManageMessages in the channel.
+ */
+export async function removeUserReaction(
+  bot: Client,
+  channel_id: string,
+  message_id: string,
+  emoji: string,
+  user_id: string
+): Promise<NanoResult<string>> {
+  return runSafe(async (): Promise<string> => {
+    const CHANNEL = await requireTextChannel(bot, channel_id);
+    const MESSAGE = await CHANNEL.messages.fetch(message_id);
+    const REACTION = MESSAGE.reactions.resolve(emoji);
+
+    if (!REACTION) {
+      throw new Error(`No '${emoji}' reaction on message '${message_id}'.`);
+    }
+
+    await REACTION.users.remove(user_id);
+    return message_id;
+  });
+}
+
 async function requireTextChannel(
   bot: Client,
   channel_id: string

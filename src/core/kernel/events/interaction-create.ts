@@ -4,12 +4,16 @@ import type {
 } from 'discord.js';
 import { MessageFlags } from 'discord.js';
 
+import { TEXT_COOLDOWN, TEXT_DISABLED_MODULE } from
+  '@/constants/text.js';
 import { parseCustomId } from '@/misc/utility/custom-id.js';
+import { fillSlots } from '@/misc/utility/format.js';
 import { replyWithError } from '@/services/errors.js';
 import { getLogger } from '@/services/logger.js';
 import type {
   NanoCommandInteraction,
-  NanoComponentInteraction
+  NanoComponentInteraction,
+  PostCommandContext
 } from '@/types/nano-module.js';
 
 /**
@@ -18,10 +22,12 @@ import type {
  * listener total; per-type handlers below.
  */
 const MS_PER_SECOND = 1000;
-const DISABLED_REPLY = 'This command belongs to a disabled module.';
+const DISABLED_REPLY = TEXT_DISABLED_MODULE;
 
 export default {
   name: 'interactionCreate',
+  description: 'Routes commands, autocomplete, components and ' +
+    'modals to their registered handlers.',
 
   async execute(interaction: Interaction): Promise<void> {
     if (
@@ -74,12 +80,14 @@ async function handleCommand(
     if (!VERDICT.allowed) {
       const SECONDS = Math.ceil(VERDICT.retry_after_ms / MS_PER_SECOND);
       await interaction.reply({
-        content: `Slow down — try again in ${SECONDS}s.`,
+        content: fillSlots(TEXT_COOLDOWN, { seconds: SECONDS }),
         flags: MessageFlags.Ephemeral,
       });
       return;
     }
   }
+
+  const STARTED_AT = Date.now();
 
   try {
     if (COMMAND.defer) {
@@ -97,6 +105,65 @@ async function handleCommand(
       'Command failed'
     );
     await replyWithError(interaction);
+    return;
+  }
+
+  /* A2: hooks observe SUCCESSFUL commands only, and never the reply. */
+  await runPostCommandHooks(interaction, STARTED_AT);
+}
+
+async function runPostCommandHooks(
+  interaction: NanoCommandInteraction,
+  started_at: number
+): Promise<void> {
+  const REGISTRY = interaction.client.nano;
+
+  if (!REGISTRY) {
+    return;
+  }
+
+  const CONTEXT: PostCommandContext = {
+    command_name: interaction.commandName,
+    subcommand_path: subcommandPath(interaction),
+    user_id: interaction.user.id,
+    guild_id: interaction.guildId,
+    channel_id: interaction.channelId,
+    duration_ms: Date.now() - started_at,
+  };
+
+  for (const _binding of REGISTRY.postCommandHooks()) {
+    try {
+      await _binding.hook(CONTEXT);
+    } catch (error: unknown) {
+      getLogger().warn(
+        {
+          err: error,
+          module: _binding.module_name,
+          command: interaction.commandName,
+        },
+        'Post-command hook failed'
+      );
+    }
+  }
+}
+
+function subcommandPath(
+  interaction: NanoCommandInteraction
+): string | undefined {
+  if (!interaction.isChatInputCommand()) {
+    return undefined;
+  }
+
+  try {
+    const GROUP = interaction.options.getSubcommandGroup(false);
+    const SUB = interaction.options.getSubcommand(false);
+
+    if (!SUB) {
+      return undefined;
+    }
+    return GROUP ? `${GROUP} ${SUB}` : SUB;
+  } catch {
+    return undefined;
   }
 }
 

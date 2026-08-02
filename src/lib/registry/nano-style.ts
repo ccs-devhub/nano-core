@@ -90,6 +90,21 @@ export const NANO_STYLE_SCHEMA = z.object({
     logo_min_rows: DEFAULT_LOGO_MIN_ROWS,
     logo_min_columns: DEFAULT_MIN_COLUMNS,
   }),
+  /**
+   * [text] — host-level overrides for shipped user-facing strings
+   * (the C7 layering law's host tier). Keys mirror the constant
+   * names in lowercase: `help_about = "..."` overrides
+   * TEXT_HELP_ABOUT; {slot} placeholders keep working.
+   */
+  text: z.record(z.string(), z.string()).default({}),
+  /**
+   * [help] — the /help surface. `greetings` replaces the shipped
+   * greeting pool wholesale; one is picked at random per render
+   * and {slot} placeholders keep working.
+   */
+  help: z.object({
+    greetings: z.array(z.string()).default([]),
+  }).default({ greetings: [] }),
 });
 
 export type NanoStyle = z.infer<typeof NANO_STYLE_SCHEMA>;
@@ -126,6 +141,34 @@ export function getStyle(root: string = process.cwd()): NanoStyle {
 export function resetStyleCache(): void {
   cached_style = null;
   cached_root = null;
+}
+
+/**
+ * A user-facing string: the nano.style.toml [text] override when the
+ * host set one, else the shipped constant (config-first,
+ * constant-fallback — the C7 layering law).
+ */
+export function styleText(
+  key: string,
+  fallback: string,
+  root: string = process.cwd()
+): string {
+  return getStyle(root).text[key] ?? fallback;
+}
+
+/**
+ * The /help greeting pool: the host's [help] greetings list when it
+ * has entries, else the shipped defaults.
+ */
+export function styleGreetings(
+  fallback: string[],
+  root: string = process.cwd()
+): string[] {
+  const CONFIGURED = getStyle(root).help.greetings
+    .filter((greeting: string): boolean => {
+      return greeting.trim().length > 0;
+    });
+  return CONFIGURED.length > 0 ? CONFIGURED : fallback;
 }
 
 /**

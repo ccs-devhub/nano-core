@@ -19,8 +19,8 @@ const MODULE: NanoModule = {
   version: '0.4.0',
   license: 'MIT',
   kind: 'extension',
-  description: 'AI bridge: an MCP server inside the bot process ' +
-    'exposing the NanoResult API layer as tools.',
+  description: 'The AI bridge, an MCP server inside the bot ' +
+    'process exposing the NanoResult API layer as tools.',
   tui: 'nano-tui.json',
 
   onEnable: async (bot: Client): Promise<void> => {

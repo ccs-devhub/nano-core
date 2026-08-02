@@ -1,7 +1,12 @@
+import { Partials } from 'discord.js';
 import { describe, expect, it } from 'vitest';
 
-import { listPortalDisabledIntents } from
-  '@/misc/utility/resolve-intents.js';
+import {
+  derivePartials,
+  listPortalDisabledIntents,
+  resolvePartials
+} from '@/misc/utility/resolve-intents.js';
+import type { NanoModule } from '@/types/nano-module.js';
 
 const GUILD_MEMBERS_FLAG = 1 << 14;
 const GUILD_MEMBERS_LIMITED_FLAG = 1 << 15;
@@ -90,4 +95,56 @@ describe('listPortalDisabledIntents', (): void => {
       expect(RESULT.error).toContain('401');
     }
   });
+});
+
+describe('derivePartials', (): void => {
+  const REACTION_MODULE: NanoModule = {
+    name: 'roles',
+    version: '1.0.0',
+    events: [{
+      name: 'messageReactionAdd',
+      partials: ['Message', 'Reaction', 'User'],
+      execute: (): void => {},
+    }],
+  };
+  const SILENT_MODULE: NanoModule = {
+    name: 'leveling',
+    version: '1.0.0',
+    events: [{
+      name: 'messageCreate',
+      execute: (): void => {},
+    }],
+  };
+  const NO_EVENTS_MODULE: NanoModule = {
+    name: 'social',
+    version: '1.0.0',
+  };
+
+  it('unions config and module partials, reports the blast radius',
+    (): void => {
+      const DERIVED = derivePartials(
+        ['Channel'],
+        [REACTION_MODULE, SILENT_MODULE, NO_EVENTS_MODULE]
+      );
+
+      expect(DERIVED.names.sort()).toEqual(
+        ['Channel', 'Message', 'Reaction', 'User']
+      );
+      expect(DERIVED.declaring).toEqual(['roles']);
+      expect(DERIVED.silent).toEqual(['leveling']);
+    });
+
+  it('derives nothing when nobody declares partials', (): void => {
+    const DERIVED = derivePartials([], [SILENT_MODULE]);
+    expect(DERIVED.names).toEqual([]);
+    expect(DERIVED.declaring).toEqual([]);
+  });
+});
+
+describe('resolvePartials', (): void => {
+  it('maps names to the Partials enum and skips unknowns',
+    (): void => {
+      const RESOLVED = resolvePartials(['Message', 'Bogus', 'Reaction']);
+      expect(RESOLVED).toEqual([Partials.Message, Partials.Reaction]);
+    });
 });

@@ -102,12 +102,14 @@ export class GuildStore {
     const HIT = this.cache.get<T>(CACHE_NAMESPACE, CACHE_KEY);
 
     if (HIT !== undefined) {
-      return HIT;
+      /* Hand back a copy — a caller mutating the result must never
+         reach into the cached object and poison later readers. */
+      return structuredClone(HIT);
     }
 
     const VALUE = this.readAndValidate(guild_id, module_id) as T;
     this.cache.set(CACHE_NAMESPACE, CACHE_KEY, VALUE);
-    return VALUE;
+    return structuredClone(VALUE);
   }
 
   /**
@@ -153,6 +155,7 @@ export class GuildStore {
       return err('Database unavailable — guild config cannot persist.');
     }
 
+    const STORED = this.loadStored(guild_id, module_id);
     const CURRENT = this.readAndValidate(guild_id, module_id);
     const MERGED = { ...CURRENT, ...partial };
     const VALIDATED = this.validateForWrite(module_id, MERGED);
@@ -161,13 +164,29 @@ export class GuildStore {
       return VALIDATED;
     }
 
-    const PATCHED_KEYS = Object.keys(partial);
-    const ENTRIES = toEntries(VALIDATED.data, this.versionOf(module_id))
-      .filter((entry: { key: string; value: string }): boolean => {
-        return PATCHED_KEYS.includes(entry.key) ||
-          entry.key === VERSION_KEY;
-      });
-    this.persistence.upsertKeys(guild_id, module_id, ENTRIES);
+    const ENTRIES = toEntries(VALIDATED.data, this.versionOf(module_id));
+    const NEEDS_MIGRATION = STORED.has_rows &&
+      STORED.version < this.versionOf(module_id);
+
+    if (NEEDS_MIGRATION) {
+      /* A partial write would strand the unpatched keys in their OLD
+         shape under a CURRENT version stamp, so the next read skips
+         migrate() and misparses them. Rewrite the whole migrated
+         object instead. */
+      this.persistence.replaceModuleConfig(guild_id, module_id, ENTRIES);
+    } else {
+      const PATCHED_KEYS = Object.keys(partial);
+      this.persistence.upsertKeys(
+        guild_id,
+        module_id,
+        ENTRIES.filter((entry: { key: string; value: string }):
+        boolean => {
+          return PATCHED_KEYS.includes(entry.key) ||
+            entry.key === VERSION_KEY;
+        })
+      );
+    }
+
     this.cache.delete(CACHE_NAMESPACE, `${guild_id}:${module_id}`);
     return VALIDATED;
   }

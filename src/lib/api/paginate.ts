@@ -12,6 +12,12 @@ import {
   MessageFlags
 } from 'discord.js';
 
+import {
+  TEXT_FOREIGN_BUTTONS,
+  TEXT_PAGE_NEXT,
+  TEXT_PAGE_PREV
+} from '@/constants/text.js';
+
 /**
  * Button-driven embed pagination with a bounded collector. Buttons
  * disable themselves when the collector times out, so no session leaks.
@@ -59,7 +65,7 @@ export async function paginate(
     void (async (): Promise<void> => {
       if (press.user.id !== interaction.user.id) {
         await press.reply({
-          content: 'These buttons belong to someone else.',
+          content: TEXT_FOREIGN_BUTTONS,
           flags: MessageFlags.Ephemeral,
         });
         return;
@@ -106,7 +112,7 @@ function buildRow(
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId(PREV_ID)
-      .setLabel('Prev')
+      .setLabel(TEXT_PAGE_PREV)
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(disabled || index === 0),
     new ButtonBuilder()
@@ -116,7 +122,7 @@ function buildRow(
       .setDisabled(true),
     new ButtonBuilder()
       .setCustomId(NEXT_ID)
-      .setLabel('Next')
+      .setLabel(TEXT_PAGE_NEXT)
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(disabled || index === total - 1)
   );

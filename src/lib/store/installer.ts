@@ -12,6 +12,7 @@ import {
   removeModuleEntry,
   saveConfig
 } from '@/registry/nano-config.js';
+import { moduleTablePrefix } from '@/services/database.js';
 import type { StoreClient, StoreModule } from '@/store/store-client.js';
 import { checkMinCore } from '@/store/store-client.js';
 import type { NanoResult } from '@/types/nano-result.js';
@@ -36,8 +37,59 @@ export const EXTERNAL_RISK_WARNING =
   'filesystem and network. Install it only if you trust the author. ' +
   'Re-run with --allow-external to confirm.';
 
+/* Leading '-' excluded: npm would read it as an option flag. */
 const PACKAGE_NAME_PATTERN =
-  /^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/;
+  /^(@[a-z0-9~][a-z0-9-._~]*\/)?[a-z0-9~][a-z0-9-._~]*$/;
+/* EX4/GR9: registry strings reach execSync and rm -rf paths — every
+   field is shape-validated before any shell command sees it. */
+const MODULE_NAME_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
+const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
+const REPO_PATTERN = /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/;
+const COMMIT_PATTERN = /^[0-9a-f]{7,40}$/;
+
+function validateStoreModule(module: StoreModule): string | null {
+  if (!MODULE_NAME_PATTERN.test(module.name)) {
+    return `Store entry has an unsafe name: '${module.name}'.`;
+  }
+
+  if (!VERSION_PATTERN.test(module.version)) {
+    return `'${module.name}' has an unsafe version string.`;
+  }
+
+  if (module.source === 'npm' && module.package !== undefined &&
+    !PACKAGE_NAME_PATTERN.test(module.package)) {
+    return `'${module.name}' has an unsafe npm package name.`;
+  }
+
+  if (module.source === 'github' && module.repo !== undefined &&
+    !REPO_PATTERN.test(module.repo)) {
+    return `'${module.name}' has an unsafe repo reference.`;
+  }
+
+  if (module.commit !== undefined &&
+    !COMMIT_PATTERN.test(module.commit)) {
+    return `'${module.name}' has an unsafe commit reference.`;
+  }
+  return null;
+}
+
+/**
+ * DB2-2: module ids mangle `-` to `_` in table names, so distinct
+ * ids can claim the SAME table prefix and migration journal — an
+ * ESCAPE clause cannot fix that. Rejected at install time.
+ */
+function tablePrefixCollision(name: string, root: string): string | null {
+  const PREFIX = moduleTablePrefix(name);
+
+  for (const _entry of loadConfig(root).modules) {
+    const EXISTING = moduleEntryName(_entry);
+
+    if (EXISTING !== name && moduleTablePrefix(EXISTING) === PREFIX) {
+      return EXISTING;
+    }
+  }
+  return null;
+}
 
 function defaultExec(command: string): string {
   return execSync(command, { stdio: 'pipe' }).toString();
@@ -67,6 +119,22 @@ export async function installFromStore(
     return err(
       `'${MODULE.name}' needs nano-core >= ${MODULE.min_core} ` +
       `(you run ${NANO_VERSION}).`
+    );
+  }
+
+  const UNSAFE = validateStoreModule(MODULE);
+
+  if (UNSAFE) {
+    return err(UNSAFE);
+  }
+
+  const COLLISION = tablePrefixCollision(MODULE.name, ROOT);
+
+  if (COLLISION) {
+    return err(
+      `'${MODULE.name}' collides with installed module ` +
+      `'${COLLISION}' on table prefix ` +
+      `'${moduleTablePrefix(MODULE.name)}'. Rename one of them.`
     );
   }
 
@@ -105,6 +173,16 @@ export function installExternal(
     return err(EXTERNAL_RISK_WARNING);
   }
 
+  const NAME = spec.replace(/^.*\//, '');
+  const COLLISION = tablePrefixCollision(NAME, ROOT);
+
+  if (COLLISION) {
+    return err(
+      `'${NAME}' collides with installed module '${COLLISION}' on ` +
+      `table prefix '${moduleTablePrefix(NAME)}'. Rename one of them.`
+    );
+  }
+
   if (IS_LOCAL) {
     if (!existsSync(resolve(ROOT, spec))) {
       return err(`Local module path '${spec}' does not exist.`);
@@ -114,11 +192,12 @@ export function installExternal(
       return err(`Invalid npm package name '${spec}'.`);
     }
 
-    EXEC(`npm install ${spec}`);
+    /* Foreign code never runs lifecycle scripts. */
+    EXEC(`npm install ${spec} --ignore-scripts`);
   }
 
   const PROVENANCE: ModuleProvenance = {
-    name: spec.replace(/^.*\//, ''),
+    name: NAME,
     source: IS_LOCAL ? 'local' : 'external',
     spec,
     installed_at: (deps.now ?? defaultNow)(),
@@ -205,7 +284,11 @@ function installSource(
         return err(`Store entry '${module.name}' is missing 'package'.`);
       }
 
-      exec(`npm install ${module.package}@${module.version}`);
+      /* Foreign store code never runs lifecycle scripts. */
+      exec(
+        `npm install ${module.package}@${module.version} ` +
+        '--ignore-scripts'
+      );
       return ok(module.package);
     }
 

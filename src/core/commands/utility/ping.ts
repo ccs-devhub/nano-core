@@ -6,6 +6,15 @@ export default {
     .setName('ping')
     .setDescription('Replies with Pong!'),
 
+  help: {
+    long:
+      'A liveness check. The bot answers immediately when it is ' +
+      'online and processing interactions, use it to confirm the ' +
+      'bot is responsive before debugging anything else.',
+    usage: '/ping',
+    examples: ['/ping'],
+  },
+
   async execute(interaction: ChatInputCommandInteraction): Promise<void> {
     await interaction.reply('Pong!');
   },

@@ -1,4 +1,5 @@
-export const NANO_VERSION = '0.3.1';
+export const NANO_VERSION = '0.4.0';
+export const NANO_REPO_URL = 'https://github.com/ccs-devhub/nano-core';
 export const CONFIG_FILE_NAME = 'nano.config.json';
 
 /* Distinct exit codes per exit path (PF18): a container supervisor

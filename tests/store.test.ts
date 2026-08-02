@@ -164,7 +164,8 @@ describe('installer', (): void => {
 
       expect(RESULT.ok).toBe(true);
       expect(COMMANDS).toEqual([
-        'npm install @ccs-devhub/nano-module-embed-styler@1.2.0',
+        'npm install @ccs-devhub/nano-module-embed-styler@1.2.0 ' +
+          '--ignore-scripts',
       ]);
 
       const CONFIG = loadConfig(ROOT);
@@ -298,7 +299,8 @@ describe('installer', (): void => {
     });
 
     expect(RESULT.ok).toBe(true);
-    expect(COMMANDS).toEqual(['npm install some-random-bot-module']);
+    expect(COMMANDS)
+      .toEqual(['npm install some-random-bot-module --ignore-scripts']);
 
     const CONFIG = loadConfig(ROOT);
     const ENTRY = CONFIG.modules[0];

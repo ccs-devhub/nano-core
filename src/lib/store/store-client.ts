@@ -42,6 +42,8 @@ export interface StoreClientOptions {
   cache_ttl_hours?: number;
   root?: string;
   fetch_fn?: typeof fetch;
+  /** Observers (doctor, TUI probes) never write the cache file. */
+  readonly?: boolean;
 }
 
 interface CacheFile {
@@ -60,6 +62,7 @@ export class StoreClient {
   private ttl_ms: number;
   private root: string;
   private fetch_fn: typeof fetch;
+  private readonly_mode: boolean;
 
   constructor(options: StoreClientOptions) {
     this.registry_url = options.registry_url;
@@ -67,6 +70,7 @@ export class StoreClient {
       MS_PER_HOUR;
     this.root = options.root ?? process.cwd();
     this.fetch_fn = options.fetch_fn ?? fetch;
+    this.readonly_mode = options.readonly ?? false;
   }
 
   /** The registry: fresh cache, then network, then stale cache. */
@@ -175,15 +179,33 @@ export class StoreClient {
     }
 
     try {
-      return JSON.parse(
+      /* EX4: the cache is user-writable state — it gets the SAME
+         schema validation as a network fetch, never a blind cast. */
+      const RAW: unknown = JSON.parse(
         readFileSync(this.cachePath(), 'utf8')
-      ) as CacheFile;
+      );
+      const FILE = RAW as { fetched_at?: unknown; registry?: unknown };
+
+      if (typeof FILE.fetched_at !== 'number') {
+        return null;
+      }
+
+      const REGISTRY = STORE_REGISTRY_SCHEMA.safeParse(FILE.registry);
+
+      if (!REGISTRY.success) {
+        return null;
+      }
+      return { fetched_at: FILE.fetched_at, registry: REGISTRY.data };
     } catch {
       return null;
     }
   }
 
   private writeCache(registry: StoreRegistry): void {
+    if (this.readonly_mode) {
+      return;
+    }
+
     const FILE = this.cachePath();
     mkdirSync(dirname(FILE), { recursive: true });
     writeFileSync(FILE, `${JSON.stringify(

@@ -36,7 +36,7 @@ describe('buildEmbed', (): void => {
     expect(EMBED.data.fields).toEqual([
       { name: 'a', value: 'b', inline: true },
     ]);
-    expect(EMBED.data.color).toBe(0x5865F2);
+    expect(EMBED.data.color).toBe(0x36393F);
   });
 
   it('prefers the named theme and its footer', (): void => {
@@ -57,4 +57,24 @@ describe('buildEmbed', (): void => {
 
     expect(EMBED.data.color).toBe(0x0000FF);
   });
+});
+
+describe('gridFields', (): void => {
+  it('lays pairs out as two columns with a spacer third slot',
+    async (): Promise<void> => {
+      const { gridFields: GRID_FIELDS, spacerField: SPACER_FIELD } =
+        await import('@/api/embed.js');
+      const GRID = GRID_FIELDS([
+        { name: 'a', value: '1' },
+        { name: 'b', value: '2' },
+        { name: 'c', value: '3' },
+      ]);
+
+      expect(GRID).toHaveLength(4);
+      expect(GRID[0]).toEqual({ name: 'a', value: '1', inline: true });
+      expect(GRID[1]).toEqual({ name: 'b', value: '2', inline: true });
+      expect(GRID[2]).toEqual(SPACER_FIELD());
+      /* the odd tail gets its own row, no trailing spacer */
+      expect(GRID[3]).toEqual({ name: 'c', value: '3', inline: true });
+    });
 });

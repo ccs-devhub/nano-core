@@ -6,6 +6,14 @@ export default {
     .setName('user')
     .setDescription('Provides information about the user.'),
 
+  help: {
+    long:
+      'Shows basic facts about you, your username and the date you ' +
+      'joined the current server.',
+    usage: '/user',
+    examples: ['/user'],
+  },
+
   async execute(interaction: ChatInputCommandInteraction): Promise<void> {
     const USER_NAME: string = interaction.user.username;
     const GUILD_MEMBER: GuildMember |

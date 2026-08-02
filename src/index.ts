@@ -9,8 +9,15 @@ import { EXIT_CODE_LOGIN_FAILED, NANO_VERSION } from
 import { createKernelModule } from '@/core/kernel/index.js';
 import { printBootBanner } from '@/misc/utility/banner.js';
 import { syncCommands } from '@/misc/utility/command-sync.js';
-import { deriveIntents, listPortalDisabledIntents, resolveIntents } from
-  '@/misc/utility/resolve-intents.js';
+import {
+  deriveIntents,
+  derivePartials,
+  listPortalDisabledIntents,
+  resolveIntents,
+  resolvePartials
+} from '@/misc/utility/resolve-intents.js';
+import { resolveCacheOptions, resolveSharding } from
+  '@/misc/utility/scale-options.js';
 import type { ExternalModule } from '@/registry/module-loader.js';
 import { loadCoreModule, loadExternalModules } from
   '@/registry/module-loader.js';
@@ -23,9 +30,10 @@ import { installProcessGuards } from '@/services/errors.js';
 import { GuildStore } from '@/services/guild-store.js';
 import { LifecycleManager } from '@/services/lifecycle.js';
 import { createLogger, getLogger } from '@/services/logger.js';
+import { ReconcileRunner } from '@/services/reconcile.js';
 import { NanoScheduler } from '@/services/scheduler.js';
-import type { NanoModule, NanoTaskHandler } from
-  '@/types/nano-module.js';
+import { VitalsService } from '@/services/vitals.js';
+import type { NanoModule } from '@/types/nano-module.js';
 
 import 'dotenv/config';
 
@@ -87,9 +95,58 @@ if (DERIVED.privileged.length > 0) {
   }
 }
 
+const DERIVED_PARTIALS = derivePartials(CONFIG.partials, ALL_DEFINITIONS);
+
+if (DERIVED_PARTIALS.names.length > 0) {
+  /* N11: partials are a GLOBAL blast radius — once one module
+     declares them, every module's listeners get partial objects. */
+  const REPORT = {
+    partials: DERIVED_PARTIALS.names,
+    declared_by: DERIVED_PARTIALS.declaring,
+    undeclared_modules: DERIVED_PARTIALS.silent,
+  };
+
+  if (DERIVED_PARTIALS.silent.length > 0) {
+    getLogger().warn(
+      REPORT,
+      'Partials active — EVERY module listener receives partial ' +
+      'objects; the undeclared modules must also be partial-safe.'
+    );
+  } else {
+    getLogger().info(REPORT, 'Partials active');
+  }
+}
+
+/* S1 seam: the fleet model is the shard manager — one shard per
+   container; env SHARD_ID/SHARD_COUNT override the config block. */
+const SHARDING_RESULT = resolveSharding(CONFIG.sharding);
+
+if (!SHARDING_RESULT.ok) {
+  getLogger().warn(
+    'Sharding config unusable — booting unsharded: ' +
+    `${SHARDING_RESULT.error}`
+  );
+}
+
+const SHARDING = SHARDING_RESULT.ok ? SHARDING_RESULT.data : null;
+/* S2: capped entity caches — RSS grows with cached members. */
+const CACHE_OPTIONS = resolveCacheOptions(CONFIG.caching);
+
 const BOT: Client = new Client({
   intents: resolveIntents(DERIVED.names),
+  partials: resolvePartials(DERIVED_PARTIALS.names),
+  makeCache: CACHE_OPTIONS.make_cache,
+  sweepers: CACHE_OPTIONS.sweepers,
+  ...(SHARDING
+    ? { shards: [SHARDING.shard_id], shardCount: SHARDING.shard_count }
+    : {}),
 });
+
+if (SHARDING) {
+  getLogger().info(
+    `Gateway shard ${SHARDING.shard_id} of ${SHARDING.shard_count}`
+  );
+}
 
 BOT.commands = new Collection();
 
@@ -111,12 +168,45 @@ if (DATABASE) {
 }
 
 const COOLDOWNS = new CooldownManager();
-const CACHE = new NanoCache();
+const CACHE = new NanoCache({ max: CONFIG.nano_cache_max });
 const LIFECYCLE = new LifecycleManager(BOT);
 const GUILD_STORE = new GuildStore(
   DATABASE ? DATABASE.guildConfigPersistence() : null,
   CACHE
 );
+
+const VITALS = new VitalsService({
+  bot: BOT,
+  bot_name: CONFIG.bot.name,
+  version: NANO_VERSION,
+  database: DATABASE,
+  scheduler: SCHEDULER,
+  sharding: SHARDING,
+});
+
+const REGISTRY = new ModuleRegistry(BOT, {
+  disabled: CONFIG.disabled,
+  cooldowns: COOLDOWNS,
+  onStateChange: (module_name: string, enabled: boolean): void => {
+    setModuleState(module_name, enabled);
+
+    /* N3: a runtime enable catches up through the same runner. */
+    if (enabled) {
+      void RECONCILE.run('enable', { module_name });
+    }
+  },
+});
+
+BOT.nano = REGISTRY;
+
+const MS_PER_DAY = 86400000;
+const RECONCILE = new ReconcileRunner({
+  bot: BOT,
+  registry: REGISTRY,
+  scheduler: SCHEDULER,
+  database: DATABASE,
+  max_lookback_ms: CONFIG.reconcile.max_lookback_d * MS_PER_DAY,
+});
 
 BOT.services = {
   cooldowns: COOLDOWNS,
@@ -125,17 +215,9 @@ BOT.services = {
   lifecycle: LIFECYCLE,
   database: DATABASE,
   guild_store: GUILD_STORE,
+  vitals: VITALS,
+  reconcile: RECONCILE,
 };
-
-const REGISTRY = new ModuleRegistry(BOT, {
-  disabled: CONFIG.disabled,
-  cooldowns: COOLDOWNS,
-  onStateChange: (module_name: string, enabled: boolean): void => {
-    setModuleState(module_name, enabled);
-  },
-});
-
-BOT.nano = REGISTRY;
 
 installProcessGuards({
   onFatal: (): Promise<void> => {
@@ -156,6 +238,13 @@ LIFECYCLE.addShutdownTask((): void => {
   SCHEDULER.stopAll();
 });
 
+/* P8 V2: the heartbeat rides an unref'd timer — observability never
+   keeps the process alive or decides restarts (exit-driven, N15). */
+VITALS.startHeartbeat(CONFIG.observability.heartbeat_interval_s);
+LIFECYCLE.addShutdownTask((): void => {
+  VITALS.stopHeartbeat();
+});
+
 /* The kernel (dispatcher + /module manager) is protected: always on. */
 await REGISTRY.register(KERNEL_MODULE, 'core', true);
 await REGISTRY.register(CORE_MODULE, 'core');
@@ -164,16 +253,8 @@ for (const _external of EXTERNAL_MODULES) {
   await REGISTRY.register(_external.module, _external.origin);
 }
 
-/* Persistent one-shots survive restarts. */
-const REARMED = SCHEDULER.rearmPersistedJobs(
-  (module_id: string, task_name: string): NanoTaskHandler | undefined => {
-    return REGISTRY.getTask(module_id, task_name);
-  }
-);
-
-if (REARMED > 0) {
-  getLogger().info(`Re-armed ${REARMED} persisted job(s)`);
-}
+/* PF6: persisted one-shots re-arm at ClientReady inside the boot
+   reconcile pass — never against a logged-out client. */
 
 const TOKEN: string | undefined = process.env.DISCORD_TOKEN;
 const CLIENT_ID: string | undefined = process.env.CLIENT_ID;

@@ -46,5 +46,11 @@ USER 10001
 
 STOPSIGNAL SIGTERM
 
+# Heartbeat-file liveness (P8 V2): unhealthy past 3x the default
+# 300s interval. VISIBILITY ONLY — restarts stay exit-driven (N15);
+# no autoheal killer is adopted.
+HEALTHCHECK --interval=60s --timeout=5s --start-period=120s \
+  CMD ["node", "-e", "const AGE = Date.now() - require('node:fs').statSync('.nano/heartbeat.json').mtimeMs; process.exit(AGE > 900000 ? 1 : 0)"]
+
 # Exec form: npm-as-PID1 skips SIGTERM and loses the final flush.
 CMD ["node", "/app/dist/index.js"]

@@ -1,14 +1,16 @@
 import type { Client } from 'discord.js';
 
 import type { CooldownManager } from '@/services/cooldown.js';
+import { wrapExecute } from '@/services/errors.js';
 import type {
   NanoCommand,
   NanoComponentHandler,
   NanoHealthReport,
   NanoModule,
-  NanoTaskHandler
+  NanoTaskHandler,
+  PostCommandHook
 } from '@/types/nano-module.js';
-import { moduleKind } from '@/types/nano-module.js';
+import { moduleKind, taskHandler } from '@/types/nano-module.js';
 import type { NanoResult } from '@/types/nano-result.js';
 import { err, ok } from '@/types/nano-result.js';
 
@@ -23,6 +25,11 @@ export interface RegisteredModule {
 
 export interface ModuleHealth extends NanoHealthReport {
   name: string;
+}
+
+export interface PostCommandHookBinding {
+  module_name: string;
+  hook: PostCommandHook;
 }
 
 export interface ModuleRegistryOptions {
@@ -72,20 +79,31 @@ export class ModuleRegistry {
     }
 
     const ENABLED = !(this.options.disabled ?? []).includes(module.name);
-    this.modules.set(module.name, {
+    const ENTRY: RegisteredModule = {
       module,
       origin,
       enabled: ENABLED,
       protected: protect,
-    });
+    };
+    this.modules.set(module.name, ENTRY);
     this.bindCommands(module);
     this.bindEvents(module);
 
     if (ENABLED && module.onEnable) {
-      await module.onEnable(this.bot);
+      try {
+        await module.onEnable(this.bot);
+      } catch (error: unknown) {
+        /* N5: one throwing onEnable must never abort the whole
+           boot — the module lands disabled, everything else runs. */
+        ENTRY.enabled = false;
+        process.stdout.write(
+          `[WARN] onEnable failed for '${module.name}' — module ` +
+          `disabled: ${String(error)}\n`
+        );
+      }
     }
 
-    const STATE = ENABLED ? '' : ', disabled';
+    const STATE = ENTRY.enabled ? '' : ', disabled';
     const LABEL = `${module.name}@${module.version}`;
     process.stdout.write(
       `  · module ${LABEL} (${origin}, ${moduleKind(module)}${STATE})\n`
@@ -170,7 +188,33 @@ export class ModuleRegistry {
     if (!this.isEnabled(module_name)) {
       return undefined;
     }
-    return this.modules.get(module_name)?.module.tasks?.[task_name];
+
+    const ENTRY = this.modules.get(module_name)?.module.tasks?.[task_name];
+
+    if (ENTRY === undefined) {
+      return undefined;
+    }
+    return taskHandler(ENTRY);
+  }
+
+  /**
+   * Post-command hooks of every enabled module, in registration
+   * order. The dispatcher runs them after each successful command
+   * (A2) — resolved live on every call so enable/disable/remove
+   * take effect immediately.
+   */
+  postCommandHooks(): PostCommandHookBinding[] {
+    const BINDINGS: PostCommandHookBinding[] = [];
+
+    for (const _entry of this.modules.values()) {
+      if (_entry.enabled && _entry.module.postCommand) {
+        BINDINGS.push({
+          module_name: _entry.module.name,
+          hook: _entry.module.postCommand,
+        });
+      }
+    }
+    return BINDINGS;
   }
 
   /** All commands belonging to currently enabled modules. */
@@ -269,6 +313,11 @@ export class ModuleRegistry {
     }
     this.listeners.delete(module_name);
 
+    /* Cron jobs hold a direct handler reference the enabled-gate
+       cannot stop, so they must be cancelled or they fire forever
+       against a removed module. */
+    this.bot.services?.scheduler?.cancelModuleJobs(module_name);
+
     for (const [_command, _owner] of this.command_owner.entries()) {
       if (_owner === module_name) {
         this.command_owner.delete(_command);
@@ -354,11 +403,14 @@ export class ModuleRegistry {
     const BOUND: BoundListener[] = [];
 
     for (const _event of module.events ?? []) {
+      /* N4: a throwing handler is logged and answered, never an
+         anonymous unhandledRejection in the gateway loop. */
+      const SAFE = wrapExecute(module.name, _event.execute);
       const LISTENER = async (...args: unknown[]): Promise<void> => {
         if (!this.isEnabled(module.name)) {
           return;
         }
-        await _event.execute(...args);
+        await SAFE(...args);
       };
 
       if (_event.once) {

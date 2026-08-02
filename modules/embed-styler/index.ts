@@ -308,8 +308,8 @@ const MODULE: NanoModule = {
   version: '0.2.0',
   license: 'MIT',
   kind: 'command',
-  description: 'Embed customization: themes, five templates, and ' +
-    '/embed send|preview|templates.',
+  description: 'Embed customization with themes, five templates ' +
+    'and the /embed command.',
   tui: 'nano-tui.json',
   commands: [EMBED_COMMAND],
 

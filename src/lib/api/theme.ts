@@ -1,5 +1,6 @@
 import type { ColorResolvable } from 'discord.js';
 
+import { UI_COLOR_NONE } from '@/constants/ui.js';
 import type { NanoResult } from '@/types/nano-result.js';
 import { ok } from '@/types/nano-result.js';
 
@@ -16,7 +17,8 @@ export interface NanoTheme {
 
 export const DEFAULT_THEME: NanoTheme = {
   name: 'nano',
-  color: '#5865F2',
+  /* The invisible bar: cards blend into the chat background. */
+  color: UI_COLOR_NONE,
 };
 
 const THEMES: Map<string, NanoTheme> = new Map([

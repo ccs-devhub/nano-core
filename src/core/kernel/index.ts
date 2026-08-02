@@ -14,7 +14,7 @@ export function createKernelModule(): NanoModule {
   return {
     name: 'nano',
     version: NANO_VERSION,
-    description: 'nano-core kernel: dispatcher and module manager.',
+    description: 'The nano-core kernel, dispatcher and module manager.',
     license: 'MPL-2.0',
     commands: [module_manager_command],
     events: [interaction_create_event, client_ready_event],

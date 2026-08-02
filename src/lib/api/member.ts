@@ -34,6 +34,33 @@ export function toMemberSummary(member: GuildMember): MemberSummary {
   };
 }
 
+/**
+ * Replace a member's ENTIRE role set in one PATCH (N7/N8). The
+ * caller computes the target set (additive-union restore, divider
+ * assignment...) and this applies it atomically — never a
+ * role-by-role loop that a concurrent change can interleave.
+ */
+export async function setMemberRoles(
+  bot: Client,
+  guild_id: string,
+  user_id: string,
+  role_ids: string[],
+  reason?: string
+): Promise<NanoResult<{ user_id: string; role_ids: string[] }>> {
+  return runSafe(async ():
+  Promise<{ user_id: string; role_ids: string[] }> => {
+    const GUILD = await requireGuild(bot, guild_id);
+    const MEMBER = await GUILD.members.fetch(user_id);
+    const UPDATED = await MEMBER.roles.set(role_ids, reason);
+    return {
+      user_id,
+      role_ids: UPDATED.roles.cache.map((role: Role): string => {
+        return role.id;
+      }),
+    };
+  });
+}
+
 /** Fetch a single guild member by user id. */
 export async function getMember(
   bot: Client,

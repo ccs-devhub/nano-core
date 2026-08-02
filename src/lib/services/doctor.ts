@@ -11,7 +11,11 @@ import type { ExternalModule } from '@/registry/module-loader.js';
 import { loadCoreModule, loadExternalModules } from
   '@/registry/module-loader.js';
 import type { NanoConfig } from '@/registry/nano-config.js';
-import { loadConfig, NANO_CONFIG_SCHEMA } from '@/registry/nano-config.js';
+import {
+  defaultConfig,
+  loadConfig,
+  NANO_CONFIG_SCHEMA
+} from '@/registry/nano-config.js';
 import { DatabaseService } from '@/services/database.js';
 import { StoreClient } from '@/store/store-client.js';
 import type { NanoCommand, NanoModule } from '@/types/nano-module.js';
@@ -110,7 +114,21 @@ export async function runDoctor(
     }
   }
 
-  const CONFIG = loadConfig(ROOT);
+  /* loadConfig THROWS on an unreadable or invalid existing file
+     (GR12) — the diagnostic must survive exactly the condition it
+     exists to report, so it degrades to defaults for the remaining
+     checks after the config check above already recorded the fault. */
+  let config_usable = true;
+  let config: NanoConfig;
+
+  try {
+    config = loadConfig(ROOT);
+  } catch {
+    config = defaultConfig();
+    config_usable = false;
+  }
+
+  const CONFIG = config;
 
   /* 3. Secrets present in the environment. */
   const TOKEN = ENV.DISCORD_TOKEN;
@@ -156,29 +174,47 @@ export async function runDoctor(
     }
   }
 
-  /* 5. Database opens. */
-  const DATABASE = DatabaseService.open(CONFIG.database, ROOT);
+  /* 5. Database opens — READONLY (DB2-3): doctor runs from the TUI
+     and the CLI against live volumes and must never be a second
+     writer (or create a file the bot then owns). */
+  const DB_FILE = join(ROOT, CONFIG.database.url ?? 'data/nano.db');
 
-  if (DATABASE.ok) {
-    DATABASE.data.close();
+  if (!existsSync(DB_FILE)) {
+    CHECKS.push({
+      name: 'database',
+      ok: true,
+      detail: 'No database file yet — created at first boot.',
+    });
+  } else {
+    const DATABASE = DatabaseService.open(CONFIG.database, ROOT, {
+      readonly: true,
+    });
+
+    if (DATABASE.ok) {
+      DATABASE.data.close();
+    }
+
+    CHECKS.push({
+      name: 'database',
+      ok: DATABASE.ok,
+      detail: DATABASE.ok
+        ? `${CONFIG.database.driver} opens readonly ` +
+          `(${CONFIG.database.url ?? 'data/nano.db'}).`
+        : DATABASE.error,
+    });
   }
 
-  CHECKS.push({
-    name: 'database',
-    ok: DATABASE.ok,
-    detail: DATABASE.ok
-      ? `${CONFIG.database.driver} opens ` +
-        `(${CONFIG.database.url ?? 'data/nano.db'}).`
-      : DATABASE.error,
-  });
-
-  /* 6. Store registry reachable (or served from cache). */
-  if (!options.skip_network) {
+  /* 6. Store registry reachable (or served from cache). Skipped
+     when the config is unusable, and READ-ONLY either way — the
+     doctor must never create .nano/ (a root-owned dir would lock
+     the bot's own heartbeat writes out). */
+  if (!options.skip_network && config_usable) {
     const STORE = new StoreClient({
       registry_url: CONFIG.store.registry_url,
       cache_ttl_hours: CONFIG.store.cache_ttl_hours,
       root: ROOT,
       fetch_fn: FETCH,
+      readonly: true,
     });
     const REGISTRY = await STORE.getRegistry();
     CHECKS.push({

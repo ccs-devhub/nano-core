@@ -37,6 +37,23 @@ interface JobRow {
 
 const DEFAULT_SQLITE_PATH = 'data/nano.db';
 
+/** nano_runtime key the heartbeat stamps (the downtime ledger). */
+export const RUNTIME_KEY_LAST_ALIVE = 'last_alive_at';
+
+/**
+ * The table-name prefix a module's DDL must use. Module ids mangle
+ * `-` to `_`, so DISTINCT ids can share a prefix (`a-b` vs `a_b`) —
+ * the installer rejects such collisions at install time (DB2-2).
+ */
+export function moduleTablePrefix(module_id: string): string {
+  return `mod_${module_id.replaceAll('-', '_')}_`;
+}
+
+/** Escape LIKE wildcards so a prefix matches literally (DB8). */
+function escapeLikePrefix(prefix: string): string {
+  return prefix.replace(/[\\%_]/g, '\\$&');
+}
+
 type SqliteConnection = InstanceType<typeof better_sqlite3>;
 
 export class DatabaseService {
@@ -48,10 +65,15 @@ export class DatabaseService {
     this.db = drizzle(connection);
   }
 
-  /** Open the configured database. */
+  /**
+   * Open the configured database. `readonly` (DB2-3) is for
+   * observers like doctor: fileMustExist, no pragma writes, no
+   * table creation — an observer can never become a second writer.
+   */
   static open(
     config: DatabaseConfig = {},
-    root: string = process.cwd()
+    root: string = process.cwd(),
+    options: { readonly?: boolean } = {}
   ): NanoResult<DatabaseService> {
     const DRIVER = config.driver ?? 'sqlite';
 
@@ -65,9 +87,21 @@ export class DatabaseService {
 
     try {
       const FILE = resolve(root, config.url ?? DEFAULT_SQLITE_PATH);
+
+      if (options.readonly) {
+        const CONNECTION = new better_sqlite3(FILE, {
+          readonly: true,
+          fileMustExist: true,
+        });
+        return ok(new DatabaseService(CONNECTION));
+      }
+
       mkdirSync(dirname(FILE), { recursive: true });
       const CONNECTION = new better_sqlite3(FILE);
       CONNECTION.pragma('journal_mode = WAL');
+      /* D-SETTINGS: NORMAL is already the WAL default in this
+         build — set explicitly for determinism only. */
+      CONNECTION.pragma('synchronous = NORMAL');
       const SERVICE = new DatabaseService(CONNECTION);
       SERVICE.createCoreTables();
       return ok(SERVICE);
@@ -79,6 +113,11 @@ export class DatabaseService {
   /** The Drizzle instance modules query through. */
   getDb(): BetterSQLite3Database {
     return this.db;
+  }
+
+  /** Absolute path of the open sqlite file (vitals size gauges). */
+  filePath(): string {
+    return this.connection.name;
   }
 
   /** Run one module's own migrations under its own journal table. */
@@ -100,11 +139,13 @@ export class DatabaseService {
   /** Explicit, owner-invoked destruction of a module's tables. */
   purgeModuleData(module_id: string): NanoResult<string[]> {
     try {
-      const PREFIX = `mod_${module_id.replaceAll('-', '_')}_`;
+      /* DB8: without ESCAPE the `_` separators are wildcards and
+         purging 'leveling' also drops mod_levelingpro_* tables. */
+      const PREFIX = escapeLikePrefix(moduleTablePrefix(module_id));
       const TABLES = this.connection
         .prepare(
           "SELECT name FROM sqlite_master WHERE type = 'table' " +
-          'AND name LIKE ?'
+          "AND name LIKE ? ESCAPE '\\'"
         )
         .all(`${PREFIX}%`) as { name: string }[];
 
@@ -119,6 +160,48 @@ export class DatabaseService {
       return ok(TABLES.map((table: { name: string }): string => {
         return table.name;
       }));
+    } catch (error: unknown) {
+      return err(error);
+    }
+  }
+
+  /**
+   * Data-lifecycle hygiene when the bot leaves a guild (DB2-11):
+   * delete that guild's rows from every module table and the core
+   * guild-config store. Returns the tables that carry a guild_id
+   * column (the ones touched).
+   */
+  purgeGuildData(guild_id: string): NanoResult<string[]> {
+    try {
+      const TABLES = this.connection
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' " +
+          "AND (name LIKE 'mod\\_%' ESCAPE '\\' " +
+          "OR name = 'nano_guild_config')"
+        )
+        .all() as { name: string }[];
+      const TOUCHED: string[] = [];
+
+      for (const _table of TABLES) {
+        const COLUMNS = this.connection
+          .prepare(`PRAGMA table_info("${_table.name}")`)
+          .all() as { name: string }[];
+        const HAS_GUILD_ID = COLUMNS.some(
+          (column: { name: string }): boolean => {
+            return column.name === 'guild_id';
+          }
+        );
+
+        if (!HAS_GUILD_ID) {
+          continue;
+        }
+
+        this.connection
+          .prepare(`DELETE FROM "${_table.name}" WHERE guild_id = ?`)
+          .run(guild_id);
+        TOUCHED.push(_table.name);
+      }
+      return ok(TOUCHED);
     } catch (error: unknown) {
       return err(error);
     }
@@ -145,14 +228,25 @@ export class DatabaseService {
         const ROWS = CONNECTION.prepare(
           'SELECT module_id, name, run_at, payload FROM nano_jobs'
         ).all() as JobRow[];
-        return ROWS.map((row: JobRow): PersistedJob => {
-          return {
-            module_id: row.module_id,
-            name: row.name,
-            run_at: row.run_at,
-            payload: JSON.parse(row.payload),
-          };
-        });
+        const JOBS: PersistedJob[] = [];
+
+        for (const _row of ROWS) {
+          /* N18: one corrupt payload must never crash boot. */
+          try {
+            JOBS.push({
+              module_id: _row.module_id,
+              name: _row.name,
+              run_at: _row.run_at,
+              payload: JSON.parse(_row.payload),
+            });
+          } catch {
+            process.stdout.write(
+              `[WARN] Dropping persisted job '${_row.module_id}/` +
+              `${_row.name}' — unreadable payload.\n`
+            );
+          }
+        }
+        return JOBS;
       },
     };
   }
@@ -238,7 +332,45 @@ export class DatabaseService {
   }
 
   close(): void {
+    /* DB7/DB5: fold the WAL back so backups and restores see one
+       file; harmless (and skipped) on a readonly connection. */
+    try {
+      if (!this.connection.readonly) {
+        this.connection.pragma('wal_checkpoint(TRUNCATE)');
+      }
+    } catch {
+      /* checkpoint is best-effort — close regardless */
+    }
     this.connection.close();
+  }
+
+  /**
+   * Small core key-value row (the downtime ledger and friends).
+   * Never fatal: a failed stamp must not take the heartbeat down.
+   */
+  getRuntimeValue(key: string): string | null {
+    try {
+      const ROW = this.connection
+        .prepare('SELECT value FROM nano_runtime WHERE key = ?')
+        .get(key) as { value: string } | undefined;
+      return ROW?.value ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  setRuntimeValue(key: string, value: string): void {
+    try {
+      this.connection
+        .prepare(
+          'INSERT INTO nano_runtime (key, value) VALUES (?, ?) ' +
+          'ON CONFLICT(key) DO UPDATE SET value = excluded.value'
+        )
+        .run(key, value);
+    } catch {
+      /* the ledger is advisory — a failed stamp only widens the
+         next reconcile window */
+    }
   }
 
   private createCoreTables(): void {
@@ -249,6 +381,11 @@ export class DatabaseService {
       'run_at INTEGER NOT NULL, ' +
       'payload TEXT, ' +
       'PRIMARY KEY (module_id, name))'
+    );
+    this.connection.exec(
+      'CREATE TABLE IF NOT EXISTS nano_runtime (' +
+      'key TEXT PRIMARY KEY, ' +
+      'value TEXT NOT NULL)'
     );
     this.connection.exec(
       'CREATE TABLE IF NOT EXISTS nano_guild_config (' +

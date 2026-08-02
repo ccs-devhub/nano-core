@@ -67,12 +67,14 @@ function synapseConfig(): Required<SynapseConfig> {
 
 const DATA = new SlashCommandBuilder()
   .setName('synapse')
-  .setDescription('Base sensory module: scan and inspect this server.')
+  .setDescription('Scan and inspect this server.')
   .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
   .addSubcommand(
     (sub: SlashCommandSubcommandBuilder): SlashCommandSubcommandBuilder => {
       return sub.setName('scan')
-        .setDescription('Full server snapshot: channels, roles, counts.');
+        .setDescription(
+          'Full server snapshot with channels, roles and counts.'
+        );
     }
   )
   .addSubcommand(
@@ -104,7 +106,7 @@ const DATA = new SlashCommandBuilder()
   .addSubcommand(
     (sub: SlashCommandSubcommandBuilder): SlashCommandSubcommandBuilder => {
       return sub.setName('vitals')
-        .setDescription('Core health: ws ping, uptime, module reports.');
+        .setDescription('Core health with ws ping, uptime and module reports.');
     }
   )
   .addSubcommand(
@@ -389,8 +391,8 @@ const MODULE: NanoModule = {
   license: 'MIT',
   kind: 'hybrid',
   description:
-    'Base sensory module: scan guilds, roles, members, channels; ' +
-    'core vitals and echo tests.',
+    'The base sensory module. Scans guilds, roles, members and ' +
+    'channels, reads core vitals and runs echo tests.',
 
   commands: [{
     data: DATA,

@@ -1,5 +1,6 @@
 import { Cron } from 'croner';
 
+import { getLogger } from '@/services/logger.js';
 import type { NanoResult } from '@/types/nano-result.js';
 import { err, ok } from '@/types/nano-result.js';
 
@@ -8,10 +9,16 @@ import { err, ok } from '@/types/nano-result.js';
  * protection). Jobs are in-memory; a module can mark a one-shot
  * `persistent` when a persistence adapter (database service) is
  * attached, so it survives restarts and re-arms on boot.
+ *
+ * NAMING CONVENTION (DB19): per-entity one-shots are named
+ * `<kind>:<guild_id>:<entity_id>` (e.g. `expiry:g1:case42`) so a
+ * re-arm can never collide with a fresh schedule.
  */
 export interface ScheduleOptions {
   timezone?: string;
   protect?: boolean;
+  /** Random 0..jitter_ms delay per run — staggers aligned crons. */
+  jitter_ms?: number;
 }
 
 export interface OnceOptions {
@@ -35,6 +42,11 @@ export interface PersistedJob {
   payload: unknown;
 }
 
+export interface SchedulerStats {
+  jobs: number;
+  overruns: number;
+}
+
 export interface SchedulerPersistence {
   saveJob(job: PersistedJob): void;
   deleteJob(module_id: string, name: string): void;
@@ -42,7 +54,8 @@ export interface SchedulerPersistence {
 }
 
 interface TrackedJob {
-  cron: Cron;
+  /** null for an immediate one-shot (no croner timer involved). */
+  cron: Cron | null;
   kind: 'cron' | 'once';
   pattern?: string;
 }
@@ -50,10 +63,16 @@ interface TrackedJob {
 export class NanoScheduler {
   private jobs: Map<string, TrackedJob> = new Map();
   private persistence: SchedulerPersistence | null = null;
+  private overruns: number = 0;
 
   /** Attach the database-backed store for persistent one-shots. */
   attachPersistence(persistence: SchedulerPersistence): void {
     this.persistence = persistence;
+  }
+
+  /** Live counters the vitals layer reports. */
+  stats(): SchedulerStats {
+    return { jobs: this.jobs.size, overruns: this.overruns };
   }
 
   /** Schedule a recurring cron job. */
@@ -71,11 +90,39 @@ export class NanoScheduler {
     }
 
     try {
+      const BASE = options.jitter_ms
+        ? async (): Promise<void> => {
+          await sleep(Math.random() * (options.jitter_ms ?? 0));
+          await fn();
+        }
+        : fn;
+      /* croner's catch:true swallows throws silently — wrap so a
+         failing cron handler is at least logged. */
+      const RUN = async (): Promise<void> => {
+        try {
+          await BASE();
+        } catch (error: unknown) {
+          getLogger().error(
+            { err: error, job: KEY },
+            'Cron handler failed'
+          );
+        }
+      };
+      /* protect blocks overlapping runs; the callback form also
+         counts and logs every blocked overrun (D-SETTINGS). */
       const CRON = new Cron(pattern, {
         timezone: options.timezone,
-        protect: options.protect ?? true,
+        protect: (options.protect ?? true)
+          ? (): void => {
+            this.overruns += 1;
+            getLogger().warn(
+              { job: KEY },
+              'Cron overrun — run blocked by protect'
+            );
+          }
+          : false,
         catch: true,
-      }, fn);
+      }, RUN);
       this.jobs.set(KEY, { cron: CRON, kind: 'cron', pattern });
       return ok(KEY);
     } catch (error: unknown) {
@@ -114,12 +161,54 @@ export class NanoScheduler {
       });
     }
 
-    const CRON = new Cron(WHEN, { catch: true }, async (): Promise<void> => {
+    const ENTRY: TrackedJob = { cron: null, kind: 'once' };
+    const RUN = async (): Promise<void> => {
+      /* Bail if the job was cancelled (or replaced) before it ran —
+         cancelJob/stopAll drop the entry, so the identity no longer
+         matches and a queued immediate one-shot does NOT fire. */
+      if (this.jobs.get(KEY) !== ENTRY) {
+        return;
+      }
+
       this.jobs.delete(KEY);
+
+      try {
+        await fn(options.payload);
+      } catch (error: unknown) {
+        getLogger().error({ err: error, job: KEY }, 'One-shot failed');
+        return;
+      }
+      /* Delete only AFTER the handler settles, so a crash mid-run
+         leaves the row to be re-armed on the next boot. */
       this.persistence?.deleteJob(module_id, name);
-      await fn(options.payload);
-    });
-    this.jobs.set(KEY, { cron: CRON, kind: 'once' });
+    };
+    const RUN_SOON = (): void => {
+      this.jobs.set(KEY, ENTRY);
+      setImmediate((): void => {
+        void RUN();
+      });
+    };
+
+    /* croner NEVER fires a one-shot whose date is already past
+       (nextRun() is null), so due-or-overdue jobs run immediately
+       instead of vanishing silently. */
+    if (WHEN.getTime() <= Date.now()) {
+      RUN_SOON();
+      return ok(KEY);
+    }
+
+    const CRON = new Cron(WHEN, { catch: true }, RUN);
+
+    /* A barely-future date can cross into the past between the check
+       above and croner sampling the clock — if it did, run now. */
+    if (CRON.nextRun() === null) {
+      CRON.stop();
+      RUN_SOON();
+      return ok(KEY);
+    }
+
+    ENTRY.cron = CRON;
+    this.jobs.set(KEY, ENTRY);
     return ok(KEY);
   }
 
@@ -146,12 +235,15 @@ export class NanoScheduler {
         continue;
       }
 
-      const WHEN = Math.max(_job.run_at, Date.now() + 1);
-      this.persistence.deleteJob(_job.module_id, _job.name);
+      /* Pass the REAL (possibly past) date so overdue jobs take the
+         immediate-run path. No pre-delete: scheduleOnce re-saves the
+         row, and a duplicate-key error means the module already
+         re-scheduled it in onEnable, so the persisted row is left
+         intact rather than silently dropped. */
       const RESULT = this.scheduleOnce(
         _job.module_id,
         _job.name,
-        new Date(WHEN),
+        new Date(_job.run_at),
         HANDLER,
         { persistent: true, payload: _job.payload }
       );
@@ -171,7 +263,7 @@ export class NanoScheduler {
       return err(`Job '${KEY}' does not exist.`);
     }
 
-    JOB.cron.stop();
+    JOB.cron?.stop();
     this.jobs.delete(KEY);
     this.persistence?.deleteJob(module_id, name);
     return ok(KEY);
@@ -184,7 +276,7 @@ export class NanoScheduler {
       return err(`Job '${jobKey(module_id, name)}' does not exist.`);
     }
 
-    JOB.cron.pause();
+    JOB.cron?.pause();
     return ok(jobKey(module_id, name));
   }
 
@@ -195,7 +287,7 @@ export class NanoScheduler {
       return err(`Job '${jobKey(module_id, name)}' does not exist.`);
     }
 
-    JOB.cron.resume();
+    JOB.cron?.resume();
     return ok(jobKey(module_id, name));
   }
 
@@ -214,8 +306,8 @@ export class NanoScheduler {
         name: NAME_PARTS.join(':'),
         kind: _job.kind,
         pattern: _job.pattern,
-        next_run: _job.cron.nextRun()?.toISOString() ?? null,
-        paused: !_job.cron.isRunning(),
+        next_run: _job.cron?.nextRun()?.toISOString() ?? null,
+        paused: _job.cron ? !_job.cron.isRunning() : false,
       });
     }
     return JOBS;
@@ -238,10 +330,16 @@ export class NanoScheduler {
   /** Stop everything (graceful shutdown). */
   stopAll(): void {
     for (const _job of this.jobs.values()) {
-      _job.cron.stop();
+      _job.cron?.stop();
     }
     this.jobs.clear();
   }
+}
+
+function sleep(delay_ms: number): Promise<void> {
+  return new Promise((resolve: () => void): void => {
+    setTimeout(resolve, delay_ms);
+  });
 }
 
 function jobKey(module_id: string, name: string): string {

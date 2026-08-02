@@ -1,4 +1,5 @@
-import { ApplicationFlags, GatewayIntentBits } from 'discord.js';
+import { ApplicationFlags, GatewayIntentBits, Partials } from
+  'discord.js';
 
 import type { NanoModule } from '@/types/nano-module.js';
 import type { NanoResult } from '@/types/nano-result.js';
@@ -92,6 +93,75 @@ export async function listPortalDisabledIntents(
   } catch (error: unknown) {
     return err(error);
   }
+}
+
+export interface DerivedPartials {
+  names: string[];
+  /** Modules that declared at least one partial. */
+  declaring: string[];
+  /**
+   * Modules with event listeners and NO partial declaration — they
+   * still receive partial objects once any partial is active (N11:
+   * partials are a global blast radius, unlike intents).
+   */
+  silent: string[];
+}
+
+/**
+ * Union of the configured partials and every partial declared by the
+ * loaded modules' events, plus the visibility data boot needs to log
+ * the blast radius: who declared them, and which event-carrying
+ * modules never did.
+ */
+export function derivePartials(
+  config_partials: string[],
+  modules: NanoModule[]
+): DerivedPartials {
+  const NAMES = new Set(config_partials);
+  const DECLARING = new Set<string>();
+
+  for (const _module of modules) {
+    for (const _event of _module.events ?? []) {
+      for (const _partial of _event.partials ?? []) {
+        NAMES.add(_partial);
+        DECLARING.add(_module.name);
+      }
+    }
+  }
+
+  const SILENT = modules
+    .filter((module: NanoModule): boolean => {
+      return (module.events ?? []).length > 0 &&
+        !DECLARING.has(module.name);
+    })
+    .map((module: NanoModule): string => {
+      return module.name;
+    });
+
+  return {
+    names: Array.from(NAMES),
+    declaring: Array.from(DECLARING),
+    silent: SILENT,
+  };
+}
+
+/**
+ * Map partial names (e.g. 'Message', 'Reaction') to the discord.js
+ * Partials enum. Unknown names are logged and skipped.
+ */
+export function resolvePartials(partial_names: string[]): Partials[] {
+  const RESOLVED: Partials[] = [];
+
+  for (const _name of partial_names) {
+    const VALUE = Partials[_name as keyof typeof Partials];
+
+    if (typeof VALUE === 'number') {
+      RESOLVED.push(VALUE);
+    } else {
+      process.stdout.write(`[WARN] Unknown partial '${_name}'.\n`);
+    }
+  }
+  return RESOLVED;
 }
 
 /**

@@ -6,6 +6,14 @@ export default {
     .setName('server')
     .setDescription('Provides information about the server.'),
 
+  help: {
+    long:
+      'Shows basic facts about the current server, its name and how ' +
+      'many members it has. Only works inside a server, never in DMs.',
+    usage: '/server',
+    examples: ['/server'],
+  },
+
   async execute(interaction: ChatInputCommandInteraction): Promise<void> {
     const GUILD: Guild | null = interaction.guild;
     if (!GUILD) {
