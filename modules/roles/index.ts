@@ -11,6 +11,9 @@ import {
   TEXT_ROLES_HEALTH_NO_DB,
   TEXT_ROLES_HEALTH_READY
 } from './constants.js';
+import type { ReactionLike, UserLike } from './events.js';
+import { handleReactionEvent, pickComponent } from './events.js';
+import { countBrokenPanels } from './panels.js';
 
 import type {
   Client,
@@ -67,16 +70,31 @@ function onDisable(): void {
 }
 
 function healthCheck(bot: Client): NanoHealthReport {
-  if (!bot.services.database) {
+  const DATABASE = bot.services.database;
+
+  if (!DATABASE) {
     return { status: 'down', details: TEXT_ROLES_HEALTH_NO_DB };
+  }
+
+  const BROKEN = countBrokenPanels(DATABASE.getDb());
+  const METRICS = {
+    queue_keys: ROLES_QUEUE.size(),
+    suppression_entries: ROLES_SUPPRESSION.size(),
+    broken_panels: BROKEN,
+  };
+
+  if (BROKEN > 0) {
+    /* B12: a vanished panel message degrades, never hides. */
+    return {
+      status: 'degraded',
+      details: `${BROKEN} panel(s) lost their message, run refresh.`,
+      metrics: METRICS,
+    };
   }
   return {
     status: 'healthy',
     details: TEXT_ROLES_HEALTH_READY,
-    metrics: {
-      queue_keys: ROLES_QUEUE.size(),
-      suppression_entries: ROLES_SUPPRESSION.size(),
-    },
+    metrics: METRICS,
   };
 }
 
@@ -87,6 +105,43 @@ const MODULE: NanoModule = {
   description:
     'Role panels, derivation rules, divider sync, snapshots and ' +
     'rejoin restore for any server.',
+  events: [
+    {
+      name: 'messageReactionAdd',
+      description:
+        'Grants a panel role when a mapped reaction is added.',
+      intents: ['GuildMessageReactions'],
+      partials: ['Message', 'Reaction', 'User'],
+      execute: (...args: unknown[]): Promise<void> => {
+        const REACTION = args[0] as ReactionLike & { client: Client };
+        return handleReactionEvent(
+          REACTION.client,
+          REACTION,
+          args[1] as UserLike,
+          'add'
+        );
+      },
+    },
+    {
+      name: 'messageReactionRemove',
+      description:
+        'Revokes a panel role when a mapped reaction is removed.',
+      intents: ['GuildMessageReactions'],
+      partials: ['Message', 'Reaction', 'User'],
+      execute: (...args: unknown[]): Promise<void> => {
+        const REACTION = args[0] as ReactionLike & { client: Client };
+        return handleReactionEvent(
+          REACTION.client,
+          REACTION,
+          args[1] as UserLike,
+          'remove'
+        );
+      },
+    },
+  ],
+
+  components: { pick: pickComponent },
+
   onEnable,
   onDisable,
   healthCheck,

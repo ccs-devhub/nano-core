@@ -20,6 +20,11 @@ const MS_PER_MINUTE = 60000;
 /* Custom emoji ids are snowflakes; a unicode literal never is. */
 const CUSTOM_EMOJI_ID_PATTERN = /^\d{17,20}$/;
 
+/** True when an emoji_slot names a custom emoji by id. */
+export function isCustomEmojiId(value: string): boolean {
+  return CUSTOM_EMOJI_ID_PATTERN.test(value);
+}
+
 export interface ResolvedPanelEntry {
   role_id: string;
   emoji_slot: string | null;
@@ -316,6 +321,15 @@ export function setPanelStatus(
     SET status = ${status}, updated_at = ${updated_at}
     WHERE guild_id = ${guild_id} AND panel_id = ${panel_id}
   `);
+}
+
+/** Broken-panel count across guilds (B12 health wiring). */
+export function countBrokenPanels(db: BetterSQLite3Database): number {
+  const ROWS = db.all(sql`
+    SELECT COUNT(*) AS broken FROM mod_roles_panels
+    WHERE status = 'broken'
+  `) as { broken: number }[];
+  return ROWS[0]?.broken ?? 0;
 }
 
 /** Republish support: point the row at the fresh message. */
