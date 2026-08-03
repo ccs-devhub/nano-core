@@ -68,3 +68,17 @@ CLAUDE.md
 # LOCAL DEV ENV (never committed)
 # =====================
 mise.local.toml
+
+# =====================
+# THE MODULE REPO LAW (Q4 amended 2026-08-03)
+# modules/ is the RUNTIME home of downloaded modules and module
+# checkouts - module code never lands in this repository. Every
+# module lives in its own repo (github.com/ccs-devhub/nano-module-*)
+# and is developed there, cloned under modules/<name>. The three
+# negations below are the legacy bundled modules, tracked until
+# their eviction to their own repos is executed.
+# =====================
+modules/*
+!modules/embed-styler/
+!modules/synapse/
+!modules/mcp/

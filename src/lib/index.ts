@@ -88,6 +88,7 @@ export type {
   SlashCommandRoleOption,
   SlashCommandStringOption,
   SlashCommandSubcommandBuilder,
+  SlashCommandSubcommandGroupBuilder,
   SlashCommandUserOption,
 } from 'discord.js';
 export {

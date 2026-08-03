@@ -65,7 +65,16 @@ const INDENTATION_SPACES = 2;
 
 export default defineConfig([
   {
-    ignores: ['dist/**', 'dist-modules/**', 'node_modules/**', '.cache/**'],
+    /* modules/roles is an external module checkout (its own repo,
+       its own identical gate harness) - the core toolchain treats
+       it as a black box. */
+    ignores: [
+      'dist/**',
+      'dist-modules/**',
+      'node_modules/**',
+      '.cache/**',
+      'modules/roles/**',
+    ],
   },
   {
     files: ['**/*.{js,ts,tsx,mjs,cjs,mts,cts}'],
