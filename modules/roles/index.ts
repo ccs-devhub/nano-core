@@ -1,6 +1,10 @@
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+  ROLES_QUEUE,
+  ROLES_SUPPRESSION
+} from './apply-role-change.js';
 import { ROLES_CONFIG_SCHEMA, ROLES_CONFIG_VERSION } from './config.js';
 import {
   TEXT_ROLES_DB_REQUIRED,
@@ -56,11 +60,24 @@ async function onEnable(bot: Client): Promise<void> {
   );
 }
 
+function onDisable(): void {
+  /* PF17: module-owned state leaves with the module. */
+  ROLES_QUEUE.clear();
+  ROLES_SUPPRESSION.clear();
+}
+
 function healthCheck(bot: Client): NanoHealthReport {
   if (!bot.services.database) {
     return { status: 'down', details: TEXT_ROLES_HEALTH_NO_DB };
   }
-  return { status: 'healthy', details: TEXT_ROLES_HEALTH_READY };
+  return {
+    status: 'healthy',
+    details: TEXT_ROLES_HEALTH_READY,
+    metrics: {
+      queue_keys: ROLES_QUEUE.size(),
+      suppression_entries: ROLES_SUPPRESSION.size(),
+    },
+  };
 }
 
 const MODULE: NanoModule = {
@@ -71,6 +88,7 @@ const MODULE: NanoModule = {
     'Role panels, derivation rules, divider sync, snapshots and ' +
     'rejoin restore for any server.',
   onEnable,
+  onDisable,
   healthCheck,
 };
 
