@@ -333,23 +333,42 @@ describe('roles migrations', (): void => {
 });
 
 describe('roles module contract', (): void => {
-  it('is an eventful extension without commands yet', (): void => {
-    expect(roles_module.name).toBe('roles');
-    expect(roles_module.version).toBeTruthy();
-    expect(roles_module.description?.length ?? 0)
-      .toBeLessThanOrEqual(MAX_DESCRIPTION);
-    expect(roles_module.commands).toBeUndefined();
-    expect(roles_module.events).toHaveLength(2);
+  it('is a hybrid with the /roles command and three events',
+    (): void => {
+      expect(roles_module.name).toBe('roles');
+      expect(roles_module.version).toBeTruthy();
+      expect(roles_module.description?.length ?? 0)
+        .toBeLessThanOrEqual(MAX_DESCRIPTION);
+      expect(roles_module.commands).toHaveLength(1);
+      expect(roles_module.commands?.[0].data.name).toBe('roles');
 
-    for (const _event of roles_module.events ?? []) {
-      expect(_event.description).toBeTruthy();
-      expect(_event.intents).toEqual(['GuildMessageReactions']);
-      expect(_event.partials).toEqual(['Message', 'Reaction', 'User']);
-    }
+      const EVENTS = roles_module.events ?? [];
 
-    expect(typeof roles_module.components?.pick).toBe('function');
-    expect(typeof roles_module.onEnable).toBe('function');
-    expect(typeof roles_module.healthCheck).toBe('function');
-    expect(moduleKind(roles_module)).toBe('extension');
-  });
+      expect(EVENTS.map((event: { name: string }): string => {
+        return event.name;
+      })).toEqual([
+        'messageReactionAdd',
+        'messageReactionRemove',
+        'guildMemberUpdate',
+      ]);
+
+      for (const _event of EVENTS) {
+        expect(_event.description).toBeTruthy();
+        expect(_event.intents?.length ?? 0).toBeGreaterThan(0);
+      }
+
+      for (const _reaction_event of EVENTS.slice(0, 2)) {
+        expect(_reaction_event.intents)
+          .toEqual(['GuildMessageReactions']);
+        expect(_reaction_event.partials)
+          .toEqual(['Message', 'Reaction', 'User']);
+      }
+
+      expect(EVENTS[2].intents).toEqual(['GuildMembers']);
+
+      expect(typeof roles_module.components?.pick).toBe('function');
+      expect(typeof roles_module.onEnable).toBe('function');
+      expect(typeof roles_module.healthCheck).toBe('function');
+      expect(moduleKind(roles_module)).toBe('hybrid');
+    });
 });

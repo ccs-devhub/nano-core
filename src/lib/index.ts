@@ -85,8 +85,10 @@ export type {
   Role,
   SlashCommandAttachmentOption,
   SlashCommandChannelOption,
+  SlashCommandRoleOption,
   SlashCommandStringOption,
   SlashCommandSubcommandBuilder,
+  SlashCommandUserOption,
 } from 'discord.js';
 export {
   bold,

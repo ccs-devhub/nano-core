@@ -59,6 +59,19 @@ export interface RoleChangeReport {
 export const ROLES_QUEUE = new SerialQueue();
 export const ROLES_SUPPRESSION = new SuppressionMap();
 
+type RuleReevaluator = (
+  bot: Client,
+  guild_id: string,
+  user_id: string
+) => Promise<void>;
+
+let rule_reevaluator: RuleReevaluator | null = null;
+
+/** Box-4 wiring: rule-runtime registers itself here at load. */
+export function setRuleReevaluator(fn: RuleReevaluator): void {
+  rule_reevaluator = fn;
+}
+
 /** Minimal live-role view the refusal matrix needs. */
 interface LiveRole {
   id: string;
@@ -253,7 +266,20 @@ export async function applyRoleChange(
         );
         removeGrants(DATABASE.getDb(), guild_id, user_id, REMOVE);
 
-        await reevaluateMemberRules();
+        if (source !== 'rule' && rule_reevaluator) {
+          /* One cascade step per external change; deeper chains
+             settle in the R5 sweep. A re-eval failure never breaks
+             the change that triggered it. */
+          try {
+            await rule_reevaluator(bot, guild_id, user_id);
+          } catch (error: unknown) {
+            getModuleLogger(MODULE_NAME).warn(
+              { guild_id, user_id, error: String(error) },
+              'Rule re-evaluation after a change failed'
+            );
+          }
+        }
+
         await resyncMemberDividers();
 
         getModuleLogger(MODULE_NAME).info(
@@ -271,13 +297,6 @@ export async function applyRoleChange(
       });
     }
   );
-}
-
-/* Box 4 seam: single-member rule re-evaluation runs here after
-   every ledger write. Deliberate no-op until the rule engine
-   lands, the pipeline shape is already final. */
-async function reevaluateMemberRules(): Promise<void> {
-  return;
 }
 
 /* Box 7 seam: single-member divider resync (DIVIDER LAW v22) runs
