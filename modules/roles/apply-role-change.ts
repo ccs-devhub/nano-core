@@ -45,6 +45,16 @@ export type RefusalReason =
   | 'sanction'
   | 'above_bot';
 
+/**
+ * R3 only: the restore path re-applies ACTIVE sanctions inside the
+ * same PATCH, so ids the moderation module names as live sanctions
+ * pass the sanction refusal. Every other source leaves this empty
+ * (B14: sanction roles stay moderation-owned).
+ */
+export interface RoleChangeOptions {
+  allow_sanctions?: string[];
+}
+
 export interface RoleChangeReport {
   guild_id: string;
   user_id: string;
@@ -141,7 +151,8 @@ export async function applyRoleChange(
   user_id: string,
   change: RoleChange,
   source: RoleChangeSource,
-  actor?: string
+  actor?: string,
+  options: RoleChangeOptions = {}
 ): Promise<NanoResult<RoleChangeReport>> {
   const DATABASE = bot.services.database;
 
@@ -151,6 +162,12 @@ export async function applyRoleChange(
 
   const CONFIG = bot.services.guild_store
     .getGuildModuleConfig<RolesConfig>(guild_id, MODULE_NAME);
+  const ALLOWED = options.allow_sanctions ?? [];
+  const SANCTION_ROLES = CONFIG.sanction_roles.filter(
+    (role_id: string): boolean => {
+      return !ALLOWED.includes(role_id);
+    }
+  );
 
   return ROLES_QUEUE.run(
     `${guild_id}:${user_id}`,
@@ -179,7 +196,7 @@ export async function applyRoleChange(
             ROLE,
             _role_id,
             guild_id,
-            CONFIG.sanction_roles,
+            SANCTION_ROLES,
             BOT_HIGHEST
           );
 
@@ -196,7 +213,7 @@ export async function applyRoleChange(
             ROLE,
             _role_id,
             guild_id,
-            CONFIG.sanction_roles,
+            SANCTION_ROLES,
             BOT_HIGHEST
           );
 

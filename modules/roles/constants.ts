@@ -21,6 +21,7 @@ export const TEXT_ROLES_HEALTH_READY =
 export const TEXT_ROLES_RESTORE_NOTICE =
   'Your roles were restored. Roles that no longer exist were ' +
   'skipped, {dropped}.';
+export const TEXT_ROLES_RESTORE_NONE_DROPPED = 'none';
 
 /* Pick refusals, sent as a notice or an ephemeral reply. */
 export const TEXT_ROLES_PICK_GATE_AGE =

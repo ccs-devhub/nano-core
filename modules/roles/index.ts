@@ -15,6 +15,11 @@ import {
 } from './constants.js';
 import type { ReactionLike, UserLike } from './events.js';
 import { handleReactionEvent, pickComponent } from './events.js';
+import type { JoinMemberLike } from './join-pipeline.js';
+import {
+  handleMemberAdd,
+  rescanPendingRestores
+} from './join-pipeline.js';
 import { countBrokenPanels } from './panels.js';
 import type { MemberLike } from './rule-runtime.js';
 import {
@@ -22,6 +27,7 @@ import {
   resetRuleRuntime,
   ruleLevelBlindCount
 } from './rule-runtime.js';
+import { countPendingSnapshots } from './snapshots.js';
 
 import type {
   Client,
@@ -69,6 +75,17 @@ async function onEnable(bot: Client): Promise<void> {
     { migrations: MIGRATIONS_DIR },
     'Roles storage ready — tables migrated, config schema registered'
   );
+
+  /* N2/N3: pending restores re-arm from the snapshot table — the
+     scheduler rows are convenience, this scan is the durable path. */
+  const ARMED = rescanPendingRestores(bot);
+
+  if (ARMED > 0) {
+    getModuleLogger(MODULE_NAME).info(
+      { armed: ARMED },
+      'Pending rejoin restores re-armed'
+    );
+  }
 }
 
 function onDisable(): void {
@@ -92,6 +109,7 @@ function healthCheck(bot: Client): NanoHealthReport {
     suppression_entries: ROLES_SUPPRESSION.size(),
     broken_panels: BROKEN,
     level_blind_rules: BLIND,
+    pending_restores: countPendingSnapshots(DATABASE.getDb()),
   };
   const PROBLEMS: string[] = [];
 
@@ -174,6 +192,17 @@ const MODULE: NanoModule = {
       execute: (...args: unknown[]): Promise<void> => {
         const MEMBER = args[1] as MemberLike & { client: Client };
         return handleMemberUpdate(MEMBER.client, MEMBER);
+      },
+    },
+    {
+      name: 'guildMemberAdd',
+      description:
+        'Grants the entry role or arms the rejoin restore when a ' +
+        'member joins.',
+      intents: ['GuildMembers'],
+      execute: (...args: unknown[]): Promise<void> => {
+        const MEMBER = args[0] as JoinMemberLike & { client: Client };
+        return handleMemberAdd(MEMBER.client, MEMBER);
       },
     },
   ],

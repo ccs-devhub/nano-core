@@ -350,6 +350,7 @@ describe('roles module contract', (): void => {
         'messageReactionAdd',
         'messageReactionRemove',
         'guildMemberUpdate',
+        'guildMemberAdd',
       ]);
 
       for (const _event of EVENTS) {
@@ -365,6 +366,7 @@ describe('roles module contract', (): void => {
       }
 
       expect(EVENTS[2].intents).toEqual(['GuildMembers']);
+      expect(EVENTS[3].intents).toEqual(['GuildMembers']);
 
       expect(typeof roles_module.components?.pick).toBe('function');
       expect(typeof roles_module.onEnable).toBe('function');
