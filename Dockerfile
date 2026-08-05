@@ -11,7 +11,8 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
-COPY tsconfig.json tsconfig.build.json tsconfig.modules.json ./
+COPY tsconfig.json tsconfig.build.json tsconfig.modules.json \
+  tsconfig.fleet.json ./
 COPY src ./src
 COPY modules ./modules
 
@@ -19,7 +20,16 @@ COPY modules ./modules
 # modules build type-checks against them, so install first.
 # (cd form: npm 10 rejects 'npm ci --prefix'.)
 RUN cd modules/mcp && npm ci --omit=dev
-RUN npm run build \
+
+# Fleet build: module checkouts compile too (their test harnesses
+# excluded). Non-TS runtime assets (a module's migrations/) ride
+# into dist-modules beside the compiled entry that resolves them.
+RUN npm run build:fleet \
+ && cd modules \
+ && find . -type d -name migrations \
+      -not -path '*/node_modules/*' \
+      -exec cp -r --parents {} ../dist-modules/ \; \
+ && cd .. \
  && npm prune --omit=dev
 
 FROM node:22.12.0-slim

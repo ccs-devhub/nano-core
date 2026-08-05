@@ -21,6 +21,11 @@ mise.local.toml
 # Rebuilt inside the build stage.
 node_modules
 modules/*/node_modules
+
+# Module checkouts: their git history and ops drafts never
+# enter the build context.
+modules/*/.git
+modules/*/.drafts
 dist
 dist-modules
 *.tsbuildinfo

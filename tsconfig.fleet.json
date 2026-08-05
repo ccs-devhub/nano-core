@@ -1,0 +1,10 @@
+{
+    "extends": "./tsconfig.modules.json",
+    "exclude": [
+        "modules/**/node_modules",
+        "modules/**/tests",
+        "modules/**/dist",
+        "modules/**/vitest.config.ts",
+        "modules/**/eslint.config.mjs"
+    ]
+}
