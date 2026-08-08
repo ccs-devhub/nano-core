@@ -863,6 +863,8 @@ describe('web module surface', (): void => {
         headers: { cookie: COOKIE },
       });
       expect(SECOND.status).toBe(429);
+      expect(Number(SECOND.headers.get('retry-after')))
+        .toBeGreaterThan(0);
 
       const URL_WAVE =
         `${base()}/api/guilds/${GUILD_ID}/modules/${MODULE_ID}` +
@@ -881,6 +883,9 @@ describe('web module surface', (): void => {
         body: JSON.stringify({}),
       });
       expect(ACT_SECOND.status).toBe(429);
+      /* Every throttle denial names its wait (Retry-After). */
+      expect(Number(ACT_SECOND.headers.get('retry-after')))
+        .toBeGreaterThan(0);
     });
 
   it('withholds host-tier VALUES from non-owners on read', async ():

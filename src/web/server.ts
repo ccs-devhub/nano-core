@@ -82,6 +82,8 @@ const SHUTDOWN_GRACE_MS = 3000;
 const MAX_IN_FLIGHT = 64;
 const HTTP_SERVICE_UNAVAILABLE = 503;
 const HTTP_TOO_MANY = 429;
+/* Retry-After for the shed path — a moment, not a window. */
+const SHED_RETRY_S = 2;
 
 /* F7: per-client-IP request windows, one bucket per surface. The
    auth bucket is tighter than the login limiter's own window; the
@@ -120,9 +122,13 @@ let active_sessions: SessionStore | null = null;
 function jsonError(
   res: ServerResponse,
   status: number,
-  message: string
+  message: string,
+  headers?: Record<string, string>
 ): void {
-  res.writeHead(status, { 'Content-Type': 'application/json' });
+  res.writeHead(status, {
+    'Content-Type': 'application/json',
+    ...(headers ?? {}),
+  });
   res.end(JSON.stringify({ ok: false, error: message }));
 }
 
@@ -318,7 +324,8 @@ export async function startWebServer(
         'Concurrency shed'
       );
       jsonError(res, HTTP_SERVICE_UNAVAILABLE,
-        'Server busy - retry shortly.');
+        'Server busy - retry shortly.',
+        { 'retry-after': String(SHED_RETRY_S) });
       return;
     }
 
@@ -331,7 +338,8 @@ export async function startWebServer(
         { request_id: REQUEST_ID, ip: IP, bucket: BUCKET },
         'Rate limit denial'
       );
-      jsonError(res, HTTP_TOO_MANY, 'Too many requests.');
+      jsonError(res, HTTP_TOO_MANY, 'Too many requests.',
+        { 'retry-after': String(RATE_WINDOW_MS / MS_PER_S) });
       return;
     }
 

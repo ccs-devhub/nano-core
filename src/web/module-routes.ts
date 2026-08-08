@@ -110,6 +110,14 @@ const MEMBER_LOOKUPS = new RateLimiter({
   window_ms: MEMBER_LOOKUP_WINDOW_MS,
 });
 
+/** Retry-After for every throttle denial — clients and proxies get
+    the true wait instead of guessing from the body text. */
+function retryAfterS(retry_after_ms: number): Record<string, string> {
+  return {
+    'retry-after': String(Math.ceil(retry_after_ms / MS_PER_S)),
+  };
+}
+
 /* F26: every /stats miss costs two id-less REST fetches (channels,
    roles) — a short-TTL cache answers repeat views for free and a
    per-guild cooldown bounds the miss path. */
@@ -287,7 +295,7 @@ function consumeWriteBudget(
       ok: false,
       error: 'On cooldown, retry in ' +
         `${Math.ceil(VERDICT.retry_after_ms / MS_PER_S)}s.`,
-    });
+    }, retryAfterS(VERDICT.retry_after_ms));
     return false;
   }
   return true;
@@ -585,7 +593,7 @@ export function registerModuleRoutes(
           ok: false,
           error: 'On cooldown, retry in ' +
             `${Math.ceil(VERDICT.retry_after_ms / MS_PER_S)}s.`,
-        });
+        }, retryAfterS(VERDICT.retry_after_ms));
         return;
       }
 
@@ -878,7 +886,7 @@ export function registerModuleRoutes(
         sendJson(context.res, HTTP_TOO_MANY, {
           ok: false,
           error: 'Member lookups are cooling down - retry shortly.',
-        });
+        }, retryAfterS(MEMBER_LOOKUP_WINDOW_MS));
         return;
       }
 
@@ -1417,7 +1425,7 @@ export function registerModuleRoutes(
           ok: false,
           error: 'On cooldown, retry in ' +
             `${Math.ceil(VERDICT.retry_after_ms / MS_PER_S)}s.`,
-        });
+        }, retryAfterS(VERDICT.retry_after_ms));
         return;
       }
 
@@ -1586,7 +1594,7 @@ export function registerModuleRoutes(
           ok: false,
           error: 'Cooldown - retry in ' +
             `${Math.ceil(VERDICT.retry_after_ms / MS_PER_S)}s.`,
-        });
+        }, retryAfterS(VERDICT.retry_after_ms));
         return;
       }
 

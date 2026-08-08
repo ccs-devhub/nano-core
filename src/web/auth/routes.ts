@@ -93,7 +93,8 @@ function baseUrl(deps: AuthDeps, web: WebConfig): string {
 export function sendJson(
   res: ServerResponse,
   status: number,
-  body: unknown
+  body: unknown,
+  headers?: Record<string, string>
 ): void {
   if (
     status === HTTP_UNAUTHORIZED ||
@@ -113,7 +114,10 @@ export function sendJson(
     );
   }
 
-  res.writeHead(status, { 'Content-Type': 'application/json' });
+  res.writeHead(status, {
+    'Content-Type': 'application/json',
+    ...(headers ?? {}),
+  });
   res.end(JSON.stringify(body));
 }
 
