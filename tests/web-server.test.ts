@@ -15,7 +15,10 @@ import {
   stopWebServer,
   webServerPort
 } from '@/web/server.js';
-import { resolveStaticFile } from '@/web/static-files.js';
+import {
+  defaultStaticRoots,
+  resolveStaticFile
+} from '@/web/static-files.js';
 import { webHealth, webStatus } from '@/web/status.js';
 
 const TEST_ENV = {
@@ -173,6 +176,76 @@ describe('web server', (): void => {
     await stopWebServer();
     await stopWebServer();
   });
+
+  it('F5: every response carries the security-header set',
+    async (): Promise<void> => {
+      await startWebServer(fakeBot(), {
+        config: webConfig(),
+        env: TEST_ENV,
+      });
+
+      const SHELL = await fetchLocal('/');
+      const MISS = await fetchLocal('/api/nope');
+
+      for (const _response of [SHELL, MISS]) {
+        const CSP = _response.headers.get('content-security-policy');
+
+        expect(CSP).toContain("default-src 'self'");
+        expect(CSP).toContain("frame-ancestors 'none'");
+        expect(CSP).toContain('https://cdn.discordapp.com');
+        expect(_response.headers.get('referrer-policy'))
+          .toBe('no-referrer');
+        expect(_response.headers.get('x-content-type-options'))
+          .toBe('nosniff');
+        /* public_url is empty here, so HSTS must stay absent. */
+        expect(_response.headers.get('strict-transport-security'))
+          .toBeNull();
+      }
+    });
+
+  it('F5: HSTS rides only an https public_url',
+    async (): Promise<void> => {
+      await startWebServer(fakeBot(), {
+        config: webConfig({ public_url: 'https://bot.example' }),
+        env: TEST_ENV,
+      });
+
+      const SECURE = await fetchLocal('/');
+
+      expect(SECURE.headers.get('strict-transport-security'))
+        .toBe('max-age=15552000');
+      await stopWebServer();
+
+      await startWebServer(fakeBot(), {
+        config: webConfig({ public_url: 'http://127.0.0.1:4777' }),
+        env: TEST_ENV,
+      });
+
+      const PLAIN = await fetchLocal('/');
+
+      expect(PLAIN.headers.get('strict-transport-security'))
+        .toBeNull();
+    });
+
+  it('F6: /health returns the minimal body and nothing else',
+    async (): Promise<void> => {
+      await startWebServer(fakeBot(), {
+        config: webConfig(),
+        env: TEST_ENV,
+      });
+
+      const RESPONSE = await fetchLocal('/health');
+
+      expect(RESPONSE.status).toBe(200);
+
+      const BODY = await RESPONSE.json() as Record<string, unknown>;
+
+      /* Exact key-set equality — the leak gate, not an absence
+         list. No version, no module list, no bind or port. */
+      expect(Object.keys(BODY).sort()).toEqual(['ok', 'ready']);
+      expect(BODY.ok).toBe(true);
+      expect(BODY.ready).toBe(false);
+    });
 });
 
 describe('resolveStaticFile', (): void => {
@@ -184,6 +257,33 @@ describe('resolveStaticFile', (): void => {
     expect(resolveStaticFile('/..%2fpackage.json', ROOTS)).toBeNull();
     expect(resolveStaticFile('/index.html%00.png', ROOTS)).toBeNull();
     expect(resolveStaticFile('/index.html', ROOTS)).not.toBeNull();
+  });
+});
+
+describe('defaultStaticRoots (the package anchor)', (): void => {
+  it('anchors to the package root, never the cwd', (): void => {
+    const BEFORE = defaultStaticRoots();
+    const AWAY = mkdtempSync(join(tmpdir(), 'nano-cwd-'));
+    const HOME = process.cwd();
+
+    try {
+      process.chdir(AWAY);
+
+      /* The fleet container regression: cwd is the state dir, the
+         built client still resolves package-relative. */
+      expect(defaultStaticRoots()).toEqual(BEFORE);
+      expect(BEFORE[0].endsWith(join('dist', 'web', 'app')))
+        .toBe(true);
+      expect(BEFORE[0].startsWith(AWAY)).toBe(false);
+    } finally {
+      process.chdir(HOME);
+    }
+  });
+
+  it('honors an explicit root override', (): void => {
+    const ROOTS = defaultStaticRoots('/somewhere');
+
+    expect(ROOTS[0]).toBe(join('/somewhere', 'dist', 'web', 'app'));
   });
 });
 

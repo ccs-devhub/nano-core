@@ -18,6 +18,7 @@ import {
 import { registerModuleRoutes } from '@/web/module-routes.js';
 import type { WebContext } from '@/web/router.js';
 import { WebRouter } from '@/web/router.js';
+import { buildSecurityHeaders } from '@/web/security-headers.js';
 import { defaultStaticRoots, serveStatic } from '@/web/static-files.js';
 import { setWebStatus } from '@/web/status.js';
 
@@ -41,7 +42,8 @@ export interface WebServerOptions {
   config: NanoConfig;
   /** Env override for tests; defaults to process.env. */
   env?: Record<string, string | undefined>;
-  /** Root for static lookup + hot config re-reads; default cwd. */
+  /** Root for hot config re-reads (+ static lookup when set);
+      default: cwd for config, the package root for static. */
   root?: string;
   /** Static lookup roots override (tests). */
   static_roots?: string[];
@@ -54,6 +56,7 @@ export interface WebServerOptions {
   };
 }
 
+const HTTP_OK = 200;
 const HTTP_UNAUTHORIZED = 401;
 const HTTP_NOT_FOUND = 404;
 const HTTP_SERVER_ERROR = 500;
@@ -87,10 +90,17 @@ const RATE_WINDOW_MS = 60000;
 const AUTH_RATE_MAX = 30;
 const API_RATE_MAX = 120;
 const STATIC_RATE_MAX = 300;
+/* F6: the probe gets its own bucket — never exempt, never able to
+   starve the api/static budgets of a real operator. */
+const HEALTH_RATE_MAX = 60;
 
 let in_flight = 0;
 
-function bucketFor(path: string): 'auth' | 'api' | 'static' {
+function bucketFor(path: string): 'auth' | 'api' | 'static' | 'health' {
+  if (path === '/health') {
+    return 'health';
+  }
+
   if (path.startsWith('/auth')) {
     return 'auth';
   }
@@ -236,7 +246,24 @@ export async function startWebServer(
   registerAuthRoutes(ROUTER, DEPS);
   registerModuleRoutes(ROUTER, DEPS);
 
-  const STATIC_ROOTS = options.static_roots ?? defaultStaticRoots(ROOT);
+  /* F6: the health probe. The body stays minimal by law — no
+     version, no module list, no bind or port. When the web host is
+     off nothing listens, so a failed probe cannot distinguish "web
+     off" from "bot dead"; the heartbeat file stays authoritative. */
+  ROUTER.add('GET', '/health', (context: WebContext): void => {
+    const READY = typeof bot.isReady === 'function' &&
+      bot.isReady() === true;
+
+    context.res.writeHead(HTTP_OK, {
+      'Content-Type': 'application/json',
+    });
+    context.res.end(JSON.stringify({ ok: true, ready: READY }));
+  });
+
+  /* The static anchor: an explicit options.root serves the tests;
+     the default resolves package-relative, never from cwd. */
+  const STATIC_ROOTS = options.static_roots ??
+    defaultStaticRoots(options.root);
   const ACCESS = new AccessValidator({
     team_domain: WEB.access_team_domain,
     aud: WEB.access_aud,
@@ -262,7 +289,15 @@ export async function startWebServer(
       max_per_window: STATIC_RATE_MAX,
       window_ms: RATE_WINDOW_MS,
     }),
+    health: new RateLimiter({
+      max_per_window: HEALTH_RATE_MAX,
+      window_ms: RATE_WINDOW_MS,
+    }),
   };
+
+  /* F5: built once from the boot snapshot — public_url changes ride
+     the restart law that governs every nano.config.json change. */
+  const SECURITY_HEADERS = buildSecurityHeaders(WEB.public_url);
 
   const HANDLER = (req: IncomingMessage, res: ServerResponse): void => {
     /* F22: every request carries an id — the log line that explains
@@ -270,6 +305,12 @@ export async function startWebServer(
     const REQUEST_ID = randomUUID().slice(0, REQUEST_ID_CHARS);
 
     res.setHeader('x-request-id', REQUEST_ID);
+
+    /* F5: every response carries the security-header set — API
+       JSON, static files, 404s and error paths alike. */
+    for (const [_name, _value] of Object.entries(SECURITY_HEADERS)) {
+      res.setHeader(_name, _value);
+    }
 
     if (in_flight >= MAX_IN_FLIGHT) {
       LOGGER.warn(

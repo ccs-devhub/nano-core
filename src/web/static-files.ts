@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import type { ServerResponse } from 'node:http';
-import { join, normalize, resolve, sep } from 'node:path';
+import { dirname, join, normalize, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * Traversal-safe static serving for the web host (B15). Lookup roots
@@ -37,8 +38,36 @@ export interface StaticOptions {
   roots: string[];
 }
 
-export function defaultStaticRoots(root: string = process.cwd()): string[] {
-  return [join(root, 'dist', 'web', 'app'), join(root, 'src', 'web', 'static')];
+/**
+ * The package root (the directory holding package.json), resolved
+ * from THIS module's location — never the process cwd. The fleet
+ * container runs with the state dir as cwd, so a cwd anchor makes
+ * dist/web/app unreachable (the launch-night symlink workaround);
+ * the package anchor holds for compiled dist/ and tsx dev alike.
+ */
+function packageRoot(): string {
+  let dir = dirname(fileURLToPath(import.meta.url));
+
+  while (!existsSync(join(dir, 'package.json'))) {
+    const PARENT = dirname(dir);
+
+    if (PARENT === dir) {
+      return process.cwd();
+    }
+    dir = PARENT;
+  }
+  return dir;
+}
+
+const PACKAGE_ROOT = packageRoot();
+
+export function defaultStaticRoots(root?: string): string[] {
+  const BASE = root ?? PACKAGE_ROOT;
+
+  return [
+    join(BASE, 'dist', 'web', 'app'),
+    join(BASE, 'src', 'web', 'static'),
+  ];
 }
 
 export function contentTypeFor(path: string): string {
