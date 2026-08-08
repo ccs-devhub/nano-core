@@ -33,6 +33,7 @@ export * from '@/constants/ui.js';
 export * from '@/misc/io/load-ts-modules.js';
 export * from '@/misc/utility/command-sync.js';
 export * from '@/misc/utility/custom-id.js';
+export * from '@/misc/utility/dashboard-audit.js';
 export * from '@/misc/utility/emoji-slot.js';
 export * from '@/misc/utility/format.js';
 export * from '@/misc/utility/help-audit.js';
@@ -72,6 +73,7 @@ export * from '@/services/logger.js';
 export * from '@/services/reconcile.js';
 export * from '@/services/scheduler.js';
 export * from '@/services/vitals.js';
+export * from '@/types/nano-dashboard.js';
 export * from '@/types/nano-module.js';
 export * from '@/types/nano-result.js';
 export * from '@/types/nano-services.js';
@@ -85,6 +87,7 @@ export type {
   Role,
   SlashCommandAttachmentOption,
   SlashCommandChannelOption,
+  SlashCommandIntegerOption,
   SlashCommandRoleOption,
   SlashCommandStringOption,
   SlashCommandSubcommandBuilder,

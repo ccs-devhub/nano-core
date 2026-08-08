@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -92,7 +93,11 @@ async function rpc(
   };
 }
 
-describe('mcp module server', (): void => {
+const MCP_PRESENT = existsSync(
+  new URL('../modules/mcp/server.ts', import.meta.url)
+);
+
+describe.skipIf(!MCP_PRESENT)('mcp module server', (): void => {
   beforeEach((): void => {
     process.env.NANO_MCP_TOKEN = TEST_TOKEN;
   });

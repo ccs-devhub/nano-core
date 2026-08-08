@@ -1,0 +1,123 @@
+#+TITLE: The Web Dashboard — AI OPERATING RECIPES
+
+AUDIENCE: AI agents. Contract-first recipes for authoring a module
+window against the nano-core dashboard host. What the unit IS lives
+in =web-dashboard.doc.org=; the binding law text in
+=docs/rules/rule-web.org=. Everything here is verifiable against
+=src/lib/types/nano-dashboard.ts= (the schema is the truth; this
+file is its usage).
+
+* THE DESCRIPTOR CONTRACT (nano-dashboard.json, field by field)
+
+Ship the file BESIDE the module entry. All growth is additive; the
+zod schema refuses unknown shapes loudly.
+
+- =title= :: LocalizedText. Every "LocalizedText" below accepts a
+  plain string OR ={ "en": "...", "es": "..." }= with any language
+  codes matching =^[a-z]{2,3}(-[a-z0-9]+)?$=.
+- =languages= :: the codes this module ships, FIRST = its default.
+  Plain strings read as the default. Ship EVERY declared code on
+  EVERY map — gate it in your own tests (the roles module's
+  language-completeness walk is the reference).
+- =api_version= / =config_version= :: must equal the module's own
+  values. The host enforces api_version at every provides dispatch
+  and warns + placeholders on config_version mismatch (absent keys
+  contribute NOTHING to a PUT — never fabricate defaults).
+- =config.fields[]= :: the widget taxonomy — boolean, number
+  (min/max/step), text (placeholder/pattern), template
+  (placeholder/slots), color, select (options are stored VALUES,
+  never localized), snowflake{role|channel|user} (placeholder),
+  snowflake_list{kind,min,max}, group{fields}, array{item,ordered},
+  variant{discriminator,variants[{value,label,fields}]}. Every
+  field: =key= (snake_case), =label=, optional =help= /
+  =propagation= / =offer_actions= (action ids offered after the
+  field changes on a PUT), =tier= (discord | ops | host — host
+  renders read-only and is REFUSED server-side for everyone but
+  the BOT_OWNER_ID user; derive tiers from the module's own
+  surfaces map, never a second copy). Give EVERY leaf a help map.
+- THE RESERVED KEY =enabled= :: a top-level boolean =enabled= is
+  the module's master switch: the overview card renders its
+  slider and the window hides it from the config pane. A group's
+  own =<group>.enabled= boolean does the same on that group's
+  functionality card. Name master switches exactly =enabled=.
+- =config.validate= :: optional provides NAME invoked as
+  =(guild_id, candidate)= after zod on every PUT — refuse
+  semantically dangerous writes there (B12).
+- =data[]= :: ={ id, title, provides, help?, explain?, columns?,
+  params?, manual?, cooldown_s? }=. =help= is the hover tooltip,
+  =explain= the long how-to-read beside raw payloads — DISTINCT
+  texts. Providers may return ={ tiles: [{label, value, hint?}],
+  bars?: [...] }= (labels/hints may be LocalizedText) to get the
+  stat-strip presentation, rows + =columns= to get the searchable
+  table, anything else renders raw beside =explain=.
+  THE MEMBER-FETCH LAW: a web-bound provides must never trigger a
+  full guild member list; anything expensive declares
+  =manual: true= (the client will not auto-load it) AND
+  =cooldown_s= (the route throttles per guild).
+- =actions[]= :: ={ id, label, provides, help?, group?, confirm?,
+  danger?, actor_gate?, cooldown_s?, params? }=. Actions sharing a
+  =group= render as one run row with deduped shared params;
+  =action_groups[]= carries the row's title, usage sentence, and
+  =see= (a data view id rendered as a find-the-ids link).
+  =actor_gate: 'host'= restricts to the bot owner. The host
+  FILTERS posted params to the declared keys and dispatches
+  =FN(guild_id, params, { actor_id })= — read =actor_id= from the
+  third argument to attribute writes in module ledgers.
+- =about= :: ={ description, badges?, media?, commands? }=.
+  Description supports =**bold**= enclosures (bright words over
+  the muted body). Badges: https shields images, =flat-square=
+  style, optional href. Media: ={kind:'image', src}= where src is
+  a RASTER filename inside the module's =nano-dashboard-assets/=
+  dir (extension-whitelisted at validation AND at serve time,
+  8 MB cap) or an https URL; ={kind:'youtube', id}= (11-char id);
+  ={kind:'x', id}= (status id). Commands: signature tags
+  ={ name: '/cmd <a|b> <arg>', help? }=.
+
+* THE COMMAND GATES (core-owned, no descriptor involvement)
+
+The reserved guild-store namespace =command_gates= holds
+={ gates: { '<command>' | '<command> <sub path>': { enabled?,
+allowed_role_ids?, allowed_user_ids? } } }=. The dispatcher
+evaluates command AND exact subcommand path (stricter wins); empty
+allow lists mean everyone; Discord permissions run first;
+=/module= is never gateable. The dashboard writes through
+=PUT .../commands/gates= — module-scoped paths only, whole object
+in, server diffs, audited. Modules ship NOTHING for this surface
+beyond their builders and help cards (mandatory: =help= with
+long/usage/examples per subcommand path in the exact
+='sub'= / ='group sub'= format).
+
+* REPLICATION — GIVE ANY MODULE A WINDOW
+
+1. Write =nano-dashboard.json= beside the module entry (contract
+   above). Descriptor-at-birth is law.
+2. Derive tiers from the module's surfaces map; name the master
+   switch =enabled=.
+3. Export a provides function per data view / action / validate
+   hook: plain ids in, plain JSON (NanoResult) out;
+   =(guild_id)= or =(guild_id, params, context?)=.
+4. Optional media: create =nano-dashboard-assets/=, rasters only.
+5. Ship help cards on every command (the /help law feeds the
+   commands surface for free).
+6. Gate it in the module's own tests: descriptor parses against
+   the barrel schema, keys == schema == surfaces (nested leaves
+   included), provides names exist, language completeness, the
+   safe action set.
+7. Nothing else. The host discovers the file, and the window,
+   languages, about, commands surface, and gates all exist.
+
+* EDGE SEMANTICS (what the host guarantees)
+
+- Invalid descriptor: the module row carries =descriptor_error=
+  and the web log warns — never indistinguishable from absence.
+- Mid-edit =nano.config.json=: module routes degrade to an empty
+  list for the request, never a 500 (A4).
+- Version mismatch: warn banner, missing keys render placeholders
+  and never write (C5).
+- api_version mismatch: provides dispatch refuses.
+- Disabled module: config/data/actions/gates writes answer 409.
+- Stale gates (a command removed by an update): invisible in the
+  UI, inert in the dispatcher, preserved in storage. Known
+  callout — prune deliberately, never automatically.
+- Assets: name + extension whitelists, =..= refused, 8 MB cap,
+  nosniff, one hour cache.

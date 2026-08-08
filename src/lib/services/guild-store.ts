@@ -10,6 +10,9 @@ import { err, ok } from '@/types/nano-result.js';
  * with no rows gets the module's schema defaults, so joining a guild
  * costs zero writes. Host-level configuration stays in
  * nano.config.json; guild-scoped configuration lives ONLY here.
+ * Writes REFUSE modules with no registered schema and every write
+ * candidate is bounded by the core write ceiling before the schema
+ * parse — the gate lives in the write path, so every caller hits it.
  */
 
 /**
@@ -21,8 +24,18 @@ export interface GuildConfigValidator {
   safeParse(input: unknown): {
     success: boolean;
     data?: unknown;
-    error?: { message: string };
+    error?: {
+      message: string;
+      /** zod-shaped issue list, when the validator provides one. */
+      issues?: { path: PropertyKey[]; message: string }[];
+    };
   };
+}
+
+/** One field-level validation problem, addressable by the client. */
+export interface GuildConfigIssue {
+  path: string;
+  message: string;
 }
 
 /** Migration hook (N12): reshape a stored value written by an older
@@ -61,8 +74,20 @@ export interface GuildConfigPersistence {
 }
 
 const CACHE_NAMESPACE = 'nano:guild-config';
+
+/** Namespaces the CORE owns; modules may never register them. */
+export const RESERVED_NAMESPACES = new Set(['command_gates']);
 const VERSION_KEY = '__config_version';
 const FIRST_VERSION = 1;
+
+/* THE CORE WRITE CEILING: every write candidate is bounded BEFORE
+   the schema parse, so no caller — web PUT, module command, bridge —
+   can push a pathological object into zod or the database. The depth
+   cap also terminates circular candidates: a cycle grows depth
+   without bound. */
+const WRITE_MAX_DEPTH = 6;
+const WRITE_MAX_NODES = 2000;
+const WRITE_MAX_STRING_BYTES = 8192;
 
 export class GuildStore {
   private persistence: GuildConfigPersistence | null;
@@ -83,6 +108,16 @@ export class GuildStore {
    * module's cached reads so the new schema applies immediately.
    */
   registerSchema(module_id: string, spec: GuildConfigSchemaSpec): void {
+    /* THE RESERVED-NAMESPACE GUARD: core registers these before any
+       module loads; a module (or a module NAMED like one) must not
+       clobber them. First registration wins. */
+    if (
+      RESERVED_NAMESPACES.has(module_id) &&
+      this.schemas.has(module_id)
+    ) {
+      return;
+    }
+
     this.schemas.set(module_id, spec);
     this.cache.clear(CACHE_NAMESPACE);
   }
@@ -112,6 +147,80 @@ export class GuildStore {
     return structuredClone(VALUE);
   }
 
+  /** The registered schema version for a module (handshake fuel). */
+  schemaVersionOf(module_id: string): number | null {
+    return this.schemas.has(module_id)
+      ? this.versionOf(module_id)
+      : null;
+  }
+
+  /**
+   * Validate a candidate WHOLE config against the module schema and
+   * return field-addressable issues (C4) — the web PUT runs this
+   * before writing so the client can map errors onto widgets. Never
+   * writes.
+   */
+  checkGuildModuleConfig(
+    module_id: string,
+    value: Record<string, unknown>
+  ): NanoResult<Record<string, unknown>> & {
+    issues?: GuildConfigIssue[];
+  } {
+    const SPEC = this.schemas.get(module_id);
+
+    if (!SPEC) {
+      return ok(stripVersionKey(value));
+    }
+
+    const PARSED = SPEC.schema.safeParse(stripVersionKey(value));
+
+    if (PARSED.success) {
+      return ok(PARSED.data as Record<string, unknown>);
+    }
+
+    const ISSUES: GuildConfigIssue[] = (PARSED.error?.issues ?? [])
+      .map((issue: { path: PropertyKey[]; message: string }):
+      GuildConfigIssue => {
+        return {
+          path: issue.path.map(String).join('.'),
+          message: issue.message,
+        };
+      });
+    return {
+      ...err(
+        `Invalid config for module '${module_id}': ` +
+        `${PARSED.error?.message ?? 'schema rejected the value'}`
+      ),
+      issues: ISSUES.length > 0
+        ? ISSUES
+        : [{ path: '', message: PARSED.error?.message ?? 'invalid' }],
+    };
+  }
+
+  /**
+   * The downgrade gate (C1): a stored version GREATER than the
+   * registered one means an older module build is running against a
+   * newer guild's rows — a write would strip the newer keys and stamp
+   * the version down. Refuse.
+   */
+  private downgradeGuard(
+    guild_id: string,
+    module_id: string
+  ): NanoResult<null> {
+    const STORED = this.loadStored(guild_id, module_id);
+    const REGISTERED = this.versionOf(module_id);
+
+    if (STORED.has_rows && STORED.version > REGISTERED) {
+      return err(
+        `Stored config version ${STORED.version} for module ` +
+        `'${module_id}' exceeds the registered version ` +
+        `${REGISTERED} — refusing the downgrade write. Update the ` +
+        'module (or restore the older data) first.'
+      );
+    }
+    return ok(null);
+  }
+
   /**
    * Replace one guild's config for one module. Validates the WHOLE
    * object against the module schema, stamps the schema version inside
@@ -124,6 +233,12 @@ export class GuildStore {
   ): NanoResult<Record<string, unknown>> {
     if (!this.persistence) {
       return err('Database unavailable — guild config cannot persist.');
+    }
+
+    const GUARD = this.downgradeGuard(guild_id, module_id);
+
+    if (!GUARD.ok) {
+      return GUARD;
     }
 
     const VALIDATED = this.validateForWrite(module_id, value);
@@ -153,6 +268,12 @@ export class GuildStore {
   ): NanoResult<Record<string, unknown>> {
     if (!this.persistence) {
       return err('Database unavailable — guild config cannot persist.');
+    }
+
+    const GUARD = this.downgradeGuard(guild_id, module_id);
+
+    if (!GUARD.ok) {
+      return GUARD;
     }
 
     const STORED = this.loadStored(guild_id, module_id);
@@ -302,10 +423,29 @@ export class GuildStore {
     const SPEC = this.schemas.get(module_id);
 
     if (!SPEC) {
-      return ok(stripVersionKey(value));
+      /* No schema means no write: an unvalidated object would define
+         the module's stored shape, so the weakest module would set
+         the write surface. Every caller hits this gate — the web PUT
+         is only one of them. */
+      return err(
+        `Module '${module_id}' has no registered config schema — ` +
+        'guild config writes are refused. Register the schema with ' +
+        'registerSchema() at module load; it must parse {} into a ' +
+        'complete default config.'
+      );
     }
 
-    const PARSED = SPEC.schema.safeParse(stripVersionKey(value));
+    const CANDIDATE = stripVersionKey(value);
+    const CEILING = checkWriteCeiling(CANDIDATE);
+
+    if (!CEILING.ok) {
+      return err(
+        `Config write for module '${module_id}' refused: ` +
+        `${CEILING.error}`
+      );
+    }
+
+    const PARSED = SPEC.schema.safeParse(CANDIDATE);
 
     if (!PARSED.success) {
       return err(
@@ -378,4 +518,84 @@ function stripVersionKey(
   const CLONE = { ...value };
   delete CLONE[VERSION_KEY];
   return CLONE;
+}
+
+/**
+ * The core config write ceiling: nesting, total-value and string
+ * bounds checked before schema parsing. Depth counts container
+ * levels with the root object at level one; scalars sit at their
+ * container's level. A circular candidate exceeds the depth cap and
+ * is refused, so traversal always terminates.
+ */
+function checkWriteCeiling(
+  value: Record<string, unknown>
+): NanoResult<null> {
+  return walkCeiling(value, 1, '', { nodes: 0 });
+}
+
+function walkCeiling(
+  node: unknown,
+  depth: number,
+  path: string,
+  budget: { nodes: number }
+): NanoResult<null> {
+  if (typeof node === 'string') {
+    return checkStringBytes(node, path);
+  }
+
+  const IS_ARRAY = Array.isArray(node);
+
+  if (!IS_ARRAY && (typeof node !== 'object' || node === null)) {
+    return ok(null);
+  }
+
+  if (depth > WRITE_MAX_DEPTH) {
+    return err(
+      `nesting deeper than ${WRITE_MAX_DEPTH} levels at '${path}'`
+    );
+  }
+
+  const ENTRIES: [string, unknown][] = IS_ARRAY
+    ? (node as unknown[]).map(
+      (item: unknown, index: number): [string, unknown] => {
+        return [String(index), item];
+      })
+    : Object.entries(node as Record<string, unknown>);
+
+  for (const [_key, _item] of ENTRIES) {
+    budget.nodes += 1;
+
+    if (budget.nodes > WRITE_MAX_NODES) {
+      return err(
+        `more than ${WRITE_MAX_NODES} values in one config object`
+      );
+    }
+
+    const CHILD_PATH = path === '' ? _key : `${path}.${_key}`;
+    const KEY_CHECK = checkStringBytes(_key, CHILD_PATH);
+
+    if (!KEY_CHECK.ok) {
+      return KEY_CHECK;
+    }
+
+    const CHILD = walkCeiling(_item, depth + 1, CHILD_PATH, budget);
+
+    if (!CHILD.ok) {
+      return CHILD;
+    }
+  }
+  return ok(null);
+}
+
+function checkStringBytes(
+  text: string,
+  path: string
+): NanoResult<null> {
+  if (Buffer.byteLength(text, 'utf8') > WRITE_MAX_STRING_BYTES) {
+    return err(
+      `string longer than ${WRITE_MAX_STRING_BYTES} bytes at ` +
+      `'${path}'`
+    );
+  }
+  return ok(null);
 }

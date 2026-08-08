@@ -1,0 +1,230 @@
+#+TITLE: Rule: The Web Dashboard Host (src/web/, P12)
+
+* Purpose
+  The MODULAR DASHBOARD LAW made real: the website is ITSELF modular
+  — a generic host shell in the core (=src/web/=, the WEB CONNECTION
+  beside the TUI) plus one DECLARATIVE descriptor window per module
+  (=nano-dashboard.json=). Product-specific dashboards hard-coded in
+  core remain forbidden.
+
+* The descriptor contract (nano-dashboard.json)
+  - Validated by =NANO_DASHBOARD_MANIFEST_SCHEMA=
+    (=src/lib/types/nano-dashboard.ts=, barrel-exported); loaded
+    path-based per module root — the host NEVER imports module code.
+  - DECLARATIVE-ONLY law (the nano-tui.json security rule at web
+    scale): descriptors are data; the only code references are
+    provides function NAMES, resolved lazily per request via
+    =getModuleApi= with =guild_id= auto-injected first. Parameterized
+    calls receive =(guild_id, params_object)=.
+  - Widget taxonomy (recursive): boolean, number, text, template,
+    color, select, snowflake{role|channel|user}, snowflake_list,
+    group{fields}, array{item, ordered?}, variant{discriminator,
+    variants}.
+  - Every config field carries a TIER from the module's own surfaces
+    map (one source, never a copy): =discord= (slash bar), =ops=
+    (dashboard admin bar), =host= (bot-owner only — rendered
+    read-only for everyone else AND refused server-side on PUT).
+    THE C6 RULING (owner, 2026-08-05): roles' =bot_role_id= +
+    =sanction_roles= are host-tier.
+  - config_version HANDSHAKE: the descriptor declares the module
+    config version; the host warns on mismatch; a widget whose key
+    is absent from the stored config renders a visible placeholder
+    and contributes NOTHING to the PUT — never a fabricated default.
+  - =config.validate= names an optional module provides hook
+    =(guild_id, candidate)= the web PUT invokes AFTER zod (B12) so
+    the module refuses semantically dangerous writes (e.g. roles
+    refuses privileged automation targets).
+  - Actions declare =actor_gate= (=ops= default, =host= = bot owner),
+    optional =confirm=/=danger=, and =cooldown_s= (per-guild, through
+    the existing CooldownManager).
+  - THE LANGUAGE LAW: every human-text field (=title=, =label=,
+    =help=, =propagation=, =placeholder=, =explain=, string
+    =confirm=, group titles, column and variant labels) accepts a
+    plain string OR a ={ lang: text }= map. A module may be authored
+    in ANY language set. =manifest.languages= declares the codes it
+    ships and its FIRST entry is the module default. Providers may
+    localize ={tiles,bars}= labels and hints the same way. The
+    CLIENT resolves per reader: per-module pick, then the global
+    locale, then the module default, then the first entry present.
+    The host chrome ships its own en and es dictionaries
+    (=client/src/lib/i18n.ts=, no library, no locale routes); the
+    topbar toggles the global language and each module window with
+    more than one declared language grows its own toggle (persisted
+    per module id). Translations LIVE IN THE MODULE (descriptor +
+    provides) — the host never carries module-specific text in any
+    language. A module's own gates must pin language completeness
+    (roles: every localized map carries every declared code).
+  - THE PRESENTATION BLOCK: =manifest.about= is optional —
+    =description= (LocalizedText), =badges[]= (https shields image +
+    optional href + alt), =media[]= (=image= from the module's own
+    =nano-dashboard-assets/= dir or an absolute https URL, =youtube=
+    by video id, =x= by status id), =commands[]= (the module's
+    command surface as tags: =/slash path= names + tooltip help).
+    Badges follow the kyonax.github.io convention:
+    =style=flat-square= (the no-radius law), house =labelColor=.
+    The client stacks the block full width: carousel, badges,
+    description, command tags; video facade chips carry the brand
+    logos inline (monochrome SVG). The host serves module assets
+    traversal-safe and extension-whitelisted at
+    =/api/guilds/:gid/modules/:mid/assets/:file= (raster only, read
+    bar applies); the fleet Dockerfile copies the assets dirs. The
+    client renders the block as the landing header (carousel beside
+    description + badges; when it exists the run zone regains its
+    divider under the first-divider rule). Videos are CLICK-TO-LOAD
+    facades: YouTube poster from i.ytimg.com then the nocookie
+    embed, X a neutral facade over the platform embed; slide
+    changes pause playing embeds. NO MODALS — the carousel is
+    inline (the kyo-web-online projects pattern, lifted out of its
+    modal).
+  - THE COMMANDS SURFACE (a core CONNECTION, not a feature): every
+    module window grows a =commands= section built from the
+    registry itself — builder JSON (names, descriptions, options,
+    subcommands) joined with the help cards every command ships by
+    law (long, usage, examples) — NO descriptor involvement.
+    PER-GUILD COMMAND GATES: a reserved guild-store namespace
+    (=command_gates=, schema v1: gates keyed by command path with
+    =enabled= / =allowed_role_ids= / =allowed_user_ids=) written
+    ONLY through
+    =PUT /api/guilds/:gid/modules/:mid/commands/gates= (write bar,
+    module-scoped paths only, diff-then-patch, audited) and
+    consulted by the kernel dispatcher on EVERY slash dispatch
+    after the host-wide module switch (both the command gate and
+    the exact subcommand-path gate apply; empty allow lists mean
+    everyone; Discord permissions still run first). THE RECOVERY
+    GUARD: =/module= is NEVER gateable, client, server, and
+    dispatcher all enforce it. The client renders command cards
+    with per-path switches, allowed-role chips from the guild
+    reference, allowed-member ids, and count tiles
+    (commands / subcommands / turned off).
+  - THE AUDIT-ROUND LAWS (2026-08-06, four-agent isolation audit):
+    data views may declare =manual= (never auto-loaded) and
+    =cooldown_s= (route-throttled) — anything expensive MUST (the
+    member-fetch law's teeth); action params are FILTERED to the
+    declared keys before dispatch; provides dispatch carries
+    ={ actor_id }= as a third argument; the =api_version= handshake
+    is enforced at every dispatch; =command_gates= is a RESERVED
+    guild-store namespace (first registration wins, modules cannot
+    clobber it); a broken descriptor surfaces =descriptor_error= on
+    its module row and warns in the web log; module routes survive
+    a mid-edit config file (A4); assets are size-capped (8 MB) with
+    nosniff; the =enabled= key is the RESERVED master-switch
+    convention (documented in =web-dashboard.ai.org=). The paired
+    unit docs are =docs/web-dashboard.doc.org= (human) +
+    =docs/web-dashboard.ai.org= (agent recipes).
+  - Every future module ships its descriptor AT BIRTH (binds P3-P10).
+
+* Security laws
+  - DISCORD_CLIENT_SECRET lives in the environment ONLY — never in
+    nano.config.json, never logged (pino redacts access_token,
+    refresh_token, client_secret, authorization, cookie
+    framework-wide).
+  - =web.enabled= defaults FALSE everywhere; prod keeps it disabled
+    until the owner deliberately enables it.
+  - THE BIND LAW: =web.bind= defaults to 127.0.0.1 (workstation). A
+    docker port publish cannot reach loopback inside the container:
+    in-container instances set bind 0.0.0.0 and keep the docker HOST
+    publish loopback-only (=127.0.0.1:PORT:PORT=). Public exposure
+    happens through a reverse proxy or tunnel that terminates TLS,
+    with =web.public_url= set to the https origin (Secure cookies
+    switch on it). NOTE: the mcp module's documented compose mapping
+    carries the same loopback-in-container bug (A7) — flagged for
+    its own fix.
+  - Port default 4777 — the mcp bridge owns 3777 and its documented
+    compose publish range starts at 3778 (A8).
+  - Sessions are 256-bit random ids keying an in-memory map: the id
+    IS the capability, there is no signing secret, and a restart
+    drops every session (accepted, documented). TTL
+    =web.session_ttl_h=, per-user cap, periodic sweep. The Discord
+    access token NEVER reaches the browser; the refresh_token is
+    DISCARDED at exchange; logout REVOKES the token.
+  - OAuth state nonces are single-use, TTL-bound, LRU-capped,
+    rate-limited, double-submitted via a pre-auth cookie, and the
+    post-login destination lives SERVER-SIDE in the nonce record.
+  - CSRF on every non-GET: TWO hard layers — SameSite=Lax cookies
+    (Lax, not Strict — the OAuth callback is a cross-site top-level
+    GET) + the X-Nano-Csrf header compared with timingSafeEqual —
+    plus a Sec-Fetch-Site check that FAILS OPEN by design: it
+    rejects only when the header is PRESENT and wrong
+    (=src/web/auth/routes.ts:196-204=), so non-browser clients ride
+    the two hard layers alone. No CORS headers, ever.
+  - Non-GET module bodies cap at 512 KiB
+    (=src/web/module-routes.ts:86=); an unparseable or oversized
+    body is 400/413, never a pass-through.
+  - THE LIVE-CHECK RULE: READS ride the OAuth guild snapshot.
+    The snapshot re-fetches ONLY inside GET /api/guilds
+    (=refreshGuildsIfStale='s single call site,
+    =src/web/auth/routes.ts:498=) when older than
+    =web.guild_refresh_s= (single-flight, 429 retry_after
+    honored) — =guardRead= itself refreshes NOTHING, so module
+    read routes see fresher data only as a side effect of the
+    client polling the guild list. WRITES additionally require
+    the bot-side LIVE check — member present AND currently
+    owner-or-admin-bits — closing the stale-admin window
+    (demotion, kick, guild-removed). A single member fetch is
+    outside the opcode-8 budget (which governs full-list fetches
+    only).
+  - Admin bar = =web.admin_permissions= (default Administrator OR
+    ManageGuild) + the guild owner always passes. Three-state guild
+    flow: admin + bot -> configurable; admin without bot ->
+    invitable (invite URL pinned to =web.invite_permissions=,
+    default 268528704 — the functional set, never Administrator);
+    everyone else -> hidden.
+  - Writes go ONLY through =bot.services.guild_store= (the cache
+    self-invalidates) — never the DB. The PUT accepts the whole
+    object but writes DIFF-THEN-PATCH: only changed keys reach
+    =patchGuildModuleConfig=, preserving the sparse-row posture; the
+    diff IS the audit log's changed_keys. The guild-store downgrade
+    gate refuses when the stored version exceeds the registered one.
+  - Every PUT and action leaves a structured audit line via
+    =getModuleLogger('web')= {user_id, guild_id, module_id, kind,
+    changed_keys}.
+  - LAW: no web-bound provides may trigger a full guild member
+    fetch.
+  - THE PROVIDES SURFACE IS AN INTER-MODULE SEAM THAT TRUSTS ITS
+    CALLER — it is not an operator surface; anything human-facing
+    re-applies the command layer's guards. The dashboard binds only
+    SAFE action sets (roles: grant/revoke excluded from v1,
+    sanctions never).
+
+* Serving model
+  - Raw node:http (the mcp precedent): promise-wrapped listen,
+    EADDRINUSE degrades health and never throws, a missing env
+    secret means the server never listens (boots degraded).
+  - Static: dist/web/app first (the built Vue client), src/web/static
+    dev fallback; =/= and =/app/*= serve the SPA shell (history
+    fallback); traversal-safe resolution (encoded dots are a 404).
+  - Health: the kernel module's healthCheck carries the web
+    connection state; =npm run doctor= gains a =web= check.
+  - Config reads are hot with a frozen-boot-snapshot fallback: an
+    unparseable nano.config.json mid-edit never turns requests into
+    500s.
+  - Sharding caveat (A13): guild classification reads the shard-local
+    cache — the dashboard host assumes the unsharded / shard-0
+    deployment.
+
+* The client (src/web/client/)
+  Vue 3 + TypeScript + Sass, built by Vite into dist/web/app (all
+  devDependencies; the runtime gains nothing). vue-tsc gates types
+  (=tsconfig.web.json=); eslint carries a scoped Vue zone; vitest
+  runs a happy-dom project for component tests. Kyonax Book tokens
+  (accent #ededed, 1px hairlines, 8px grid, Space Mono + Poppins, no
+  radius, no gradients, no emoji). The round-trip invariant is
+  tested: editing one widget PUTs every other key deep-equal,
+  including keys the descriptor does not know.
+
+* Build and fleet
+  =npm run build:web= = vue-tsc + vite build; =build= and
+  =build:fleet= include it. The client's vite.config.ts lives INSIDE
+  src/web/client (the docker COPY set excludes repo-root strays).
+  The fleet image copies every module's nano-dashboard.json into
+  dist-modules (without it, prod shows zero module windows).
+
+* Verification
+  Gates: =npm run lint= 0, =npm run build=, =npx vitest run=,
+  =npm run doctor=, tokenless smoke, and the degraded smoke
+  (web.enabled true + no secret = boots degraded, never listens).
+  E2E (owner-gated): dev bot + real CLIENT_ID/DISCORD_CLIENT_SECRET
+  + portal redirect URI =<base>/auth/callback=; login -> guilds
+  classify; edit a staging key via the web -> =/roles-config show=
+  confirms the write + cache invalidation; run a data view; run an
+  action. Deploy to the VPS is a later owner gate.

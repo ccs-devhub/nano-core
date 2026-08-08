@@ -49,6 +49,30 @@ export function createLogger(config: LoggerConfig = {}): Logger {
 
   root_logger = pino({
     level: config.level ?? 'info',
+    /* B20: framework-wide secret redaction. The web layer (OAuth
+       tokens, cookies, the client secret) must never log a
+       credential — this lands BEFORE any web code can log. */
+    redact: {
+      paths: [
+        'access_token',
+        '*.access_token',
+        'refresh_token',
+        '*.refresh_token',
+        'client_secret',
+        '*.client_secret',
+        'token',
+        '*.token',
+        'authorization',
+        '*.authorization',
+        'cookie',
+        '*.cookie',
+        'headers.authorization',
+        'headers.cookie',
+        'req.headers.authorization',
+        'req.headers.cookie',
+      ],
+      censor: '[redacted]',
+    },
     transport: { targets: TARGETS },
   });
   return root_logger;

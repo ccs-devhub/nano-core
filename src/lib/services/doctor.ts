@@ -283,7 +283,31 @@ export async function runDoctor(
     detail: `${DERIVED.names.join(', ')}${privileged_note}`,
   });
 
-  /* 9. Slash commands registered in the active scope + stale globals. */
+  /* 9. Web dashboard (P12): enabled needs its env-only secret. */
+  if (CONFIG.web.enabled) {
+    const WEB_SECRET = ENV.DISCORD_CLIENT_SECRET;
+    const WEB_MISSING = [
+      WEB_SECRET ? null : 'DISCORD_CLIENT_SECRET',
+      CLIENT_ID ? null : 'CLIENT_ID',
+    ].filter(Boolean);
+    CHECKS.push({
+      name: 'web',
+      ok: WEB_MISSING.length === 0,
+      detail: WEB_MISSING.length === 0
+        ? `enabled on ${CONFIG.web.bind}:${CONFIG.web.port} — ` +
+          'OAuth secrets set.'
+        : `enabled but missing ${WEB_MISSING.join(', ')} (set in ` +
+          '.env) — the server will boot degraded and never listen.',
+    });
+  } else {
+    CHECKS.push({
+      name: 'web',
+      ok: true,
+      detail: 'Web dashboard disabled (web.enabled false).',
+    });
+  }
+
+  /* 10. Slash commands registered in the active scope + stale globals. */
   if (TOKEN && CLIENT_ID && !options.skip_network) {
     const LOCAL = await collectCommandDefinitions(CONFIG);
     const AUDIT = await auditCommands(LOCAL, {

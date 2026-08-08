@@ -24,6 +24,19 @@ const DEFAULT_MESSAGE_SWEEP_INTERVAL_S = 1800;
 const DEFAULT_MESSAGE_MAX_AGE_S = 1800;
 const DEFAULT_RECONCILE_LOOKBACK_D = 7;
 const DEFAULT_NANO_CACHE_MAX = 20000;
+/* P12: the web dashboard host. Port 4777 — the mcp bridge owns 3777
+   and its documented compose publish range starts at 3778 (A8). */
+const DEFAULT_WEB_PORT = 4777;
+const DEFAULT_WEB_BIND = '127.0.0.1';
+/* Q7 (round-2 ruling): 2h, not 12 — a session pins the full OAuth
+   guild list in memory, so short-lived is both safer and lighter. */
+const DEFAULT_WEB_SESSION_TTL_H = 2;
+const DEFAULT_WEB_GUILD_REFRESH_S = 300;
+const DEFAULT_WEB_ADMIN_PERMISSIONS = ['Administrator', 'ManageGuild'];
+/* Owner ruling 2026-08-05: the FUNCTIONAL SET — ManageRoles +
+   ViewChannel + SendMessages + EmbedLinks + ReadMessageHistory +
+   AddReactions + ManageMessages. Never Administrator (GR-L3). */
+const DEFAULT_WEB_INVITE_PERMISSIONS = '268528704';
 
 export const MODULE_PROVENANCE_SCHEMA = z.object({
   name: z.string(),
@@ -110,6 +123,44 @@ export const NANO_CONFIG_SCHEMA = z.object({
     scheduled_event_cache: false,
     message_sweep_interval_s: DEFAULT_MESSAGE_SWEEP_INTERVAL_S,
     message_max_age_s: DEFAULT_MESSAGE_MAX_AGE_S,
+  }),
+  /* P12: the modular dashboard host (src/web). DISCORD_CLIENT_SECRET
+     lives in env ONLY and never in this file. THE BIND LAW (A7):
+     loopback default for workstations; in-container instances set
+     bind 0.0.0.0 and keep the docker HOST publish loopback-only.
+     NOTE (A12): a pre-web core strips this block on any config
+     round-trip — never share one config file across core versions. */
+  web: z.object({
+    enabled: z.boolean().default(false),
+    port: z.number().default(DEFAULT_WEB_PORT),
+    bind: z.string().default(DEFAULT_WEB_BIND),
+    public_url: z.string().default(''),
+    session_ttl_h: z.number().default(DEFAULT_WEB_SESSION_TTL_H),
+    guild_refresh_s: z.number().default(DEFAULT_WEB_GUILD_REFRESH_S),
+    admin_permissions: z.array(z.string())
+      .default([...DEFAULT_WEB_ADMIN_PERMISSIONS]),
+    invite_permissions: z.string()
+      .default(DEFAULT_WEB_INVITE_PERMISSIONS),
+    /* F13/F7 (2026-08-07): origin trust for a fronting proxy.
+       trust_proxy_header accepts CF-Connecting-IP as the client
+       address; access_team_domain + access_aud arm origin-side
+       Cloudflare Access JWT validation (both set = enforced on
+       every request). Empty defaults keep local dev untouched. */
+    trust_proxy_header: z.boolean().default(false),
+    access_team_domain: z.string().default(''),
+    access_aud: z.string().default(''),
+  }).default({
+    enabled: false,
+    port: DEFAULT_WEB_PORT,
+    bind: DEFAULT_WEB_BIND,
+    public_url: '',
+    session_ttl_h: DEFAULT_WEB_SESSION_TTL_H,
+    guild_refresh_s: DEFAULT_WEB_GUILD_REFRESH_S,
+    admin_permissions: [...DEFAULT_WEB_ADMIN_PERMISSIONS],
+    invite_permissions: DEFAULT_WEB_INVITE_PERMISSIONS,
+    trust_proxy_header: false,
+    access_team_domain: '',
+    access_aud: '',
   }),
 });
 

@@ -1,0 +1,109 @@
+THE COMMIT GATE RUNBOOK (Turn 4, owner keystrokes only)
+
+RE-RULED 2026-08-07 (late): THE PHASE-1 FREEZE. Run steps 1-2 ONLY
+(core + roles). Steps 3-8 (the six new module trees) are FROZEN
+until an explicit unfreeze ruling; step 9's sync tail shrinks to
+sweep-preview (the six modules' commands stay unregistered). The
+core commit message now also covers the round-2 tail and the build
+surface. No commit carries any AI attribution or co-author line.
+
+PRE-FLIGHT (already done by the assistant, no action):
+  every new tree carries .gitignore (node_modules never
+  stages), the full required doc set, a real package.json
+  description, and .drafts/COMMIT_MSG_0.1.0.txt - the full
+  release narrative each -F below rides.
+
+1. nano-core (this repo, branch main):
+   git add -A
+   git commit -F .drafts/COMMIT_MSG_hardening_2026-08-07.txt
+   (src/web/ and the new docs are untracked adds; .drafts/ and
+    modules/ stay ignored.)
+
+2. nano-module-roles (modules/roles checkout):
+   cd modules/roles
+   git add -A        # picks up the previously untracked dashboard
+                     # slice: roles.ai.org, nano-dashboard.json,
+                     # nano-dashboard-assets/, CHANGELOG.org
+   git commit -F .drafts/COMMIT_MSG_0.2.0.txt
+   git tag v0.2.0    # when you call the release
+   (Store pin bump in nano-core's registry rides the next core
+    commit if you tag.)
+
+3. nano-module-moderation (NEW - modules/moderation is a fresh
+   checkout with no repo yet; the module is COMPLETE: boxes 1-8 +
+   docs, 13 commands, 65 tests):
+   Create the sibling repo (ccs-devhub/nano-module-moderation),
+   then inside modules/moderation:
+   git init && git add -A
+   git commit -F .drafts/COMMIT_MSG_0.1.0.txt
+   git remote add origin <repo-url> && git push -u origin main
+   git tag v0.1.0   # when you call the release
+
+4. nano-module-leveling (NEW - modules/leveling, COMPLETE: boxes
+   1-6 + docs, 4 commands, 31 tests, the getLevel seam roles
+   consumes and the applyTierRoles seam it consumes from roles):
+   Create the sibling repo (ccs-devhub/nano-module-leveling),
+   then inside modules/leveling:
+   git init && git add -A
+   git commit -F .drafts/COMMIT_MSG_0.1.0.txt
+   git remote add origin <repo-url> && git push -u origin main
+   git tag v0.1.0   # when you call the release
+
+5. nano-module-social (NEW - modules/social, COMPLETE: the
+   SSRF-safe contract, seven honest adapters, the poll engine,
+   the dashboard lane, 21 tests):
+   Create the sibling repo (ccs-devhub/nano-module-social),
+   then inside modules/social:
+   git init && git add -A
+   git commit -F .drafts/COMMIT_MSG_0.1.0.txt
+   git remote add origin <repo-url> && git push -u origin main
+   git tag v0.1.0   # when you call the release
+
+6. nano-module-billboard (NEW - modules/billboard, COMPLETE: the
+   contract with schema floors, the budgeted rename engine with
+   the two-way timeout recovery, the dashboard lane, 25 tests):
+   Create the sibling repo (ccs-devhub/nano-module-billboard),
+   then inside modules/billboard:
+   git init && git add -A
+   git commit -F .drafts/COMMIT_MSG_0.1.0.txt
+   git remote add origin <repo-url> && git push -u origin main
+   git tag v0.1.0   # when you call the release
+   NOTE: nano.config.json (core repo) already registers it - that
+   change rides the core commit.
+
+7. nano-module-announcer (NEW - modules/announcer, COMPLETE: the
+   one-body contract, the seven-outcome repost engine, the
+   dashboard lane, 21 tests):
+   Create the sibling repo (ccs-devhub/nano-module-announcer),
+   then inside modules/announcer:
+   git init && git add -A
+   git commit -F .drafts/COMMIT_MSG_0.1.0.txt
+   git remote add origin <repo-url> && git push -u origin main
+   git tag v0.1.0   # when you call the release
+   NOTE: nano.config.json (core repo) already registers it - that
+   change rides the core commit.
+
+8. nano-module-oracle (NEW - modules/oracle, PART B COMPLETE:
+   the precision-law pipeline, the gated answer engine, the
+   aggregates-only lane, 24 tests):
+   Create the sibling repo (ccs-devhub/nano-module-oracle),
+   then inside modules/oracle:
+   git init && git add -A
+   git commit -F .drafts/COMMIT_MSG_0.1.0.txt
+   git remote add origin <repo-url> && git push -u origin main
+   git tag v0.1.0   # when you call the release
+   NOTE: nano.config.json (core repo) already registers it - that
+   change rides the core commit. The MessageContent intent needs
+   the PORTAL TOGGLE before the oracle can hear anything.
+
+9. AFTER commits, the carried dev-bot tail:
+   restart kyonax-ptb, then: npm run module -- commands --sync
+   (registers every missing command - moderation's thirteen,
+    sweep-preview, leveling's four, social, billboard,
+    announcer, oracle; doctor's commands check goes green
+    again). The oracle additionally needs the MessageContent
+    PORTAL TOGGLE or it is deaf.
+
+Deploy (Turn 5) stays with the web node: the prod image REBUILD is
+required before any flip - 0.4.0-r1 ships no dashboard and none of
+today's hardening.

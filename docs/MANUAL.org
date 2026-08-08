@@ -250,6 +250,39 @@ reference; the [[file:../README.org][README]] is the quickstart.
     =/module health mcp= reports endpoint state and detail; the TUI
     Modules view and its mcp panel show the port and both gates.
 
+* The web dashboard
+  The modular dashboard host (=src/web/=, the WEB CONNECTION beside
+  the TUI): a raw node:http server inside the bot process serving a
+  Vue 3 client, where every module window is rendered from that
+  module's declarative =nano-dashboard.json= descriptor. No module
+  code ever executes in the host; full laws in
+  =docs/rules/rule-web.org=.
+
+  - Off by default: =web.enabled= is =false=; prod keeps it that way
+    until deliberately enabled. Enable plus set the env secret and
+    the bot serves =http://127.0.0.1:4777/= (defaults: =web.port=
+    4777, =web.bind= 127.0.0.1 — in containers set bind 0.0.0.0 and
+    keep the docker HOST publish loopback-only).
+  - Secrets: reuses =CLIENT_ID= as the OAuth client id and needs a
+    NEW env-only =DISCORD_CLIENT_SECRET= (Developer Portal > OAuth2;
+    add =<base>/auth/callback= as a redirect URI). Missing secret =
+    the server boots degraded and never listens.
+  - Login: Discord OAuth (identify + guilds). Guilds classify three
+    ways: admin + bot present -> configurable; admin without bot ->
+    invitable (a pre-selected invite pinned to
+    =web.invite_permissions=); otherwise hidden. The admin bar is
+    =web.admin_permissions= (default Administrator OR ManageGuild;
+    the guild owner always passes); every WRITE re-checks the bar
+    live against the bot's own view.
+  - Config edits validate through the module schema (field-level
+    issues), run the module's optional validate hook, and write
+    diff-then-patch through the guild store — sessions, cooldowns,
+    CSRF, and audit logging are described in the rule file.
+  - Dev loop: =npm run dev:web= starts Vite with =/api= + =/auth=
+    proxied to the bot port; =npm run build:web= builds the client
+    into =dist/web/app=. Doctor gains a =web= check; =/module
+    health nano= carries the web connection state.
+
 * Services (for module authors)
   Everything importable from the core (in-repo: =@/= aliases). All
   fallible calls return =NanoResult<T>= (={ok, data | error}=) and

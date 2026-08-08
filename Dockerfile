@@ -12,7 +12,7 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY tsconfig.json tsconfig.build.json tsconfig.modules.json \
-  tsconfig.fleet.json ./
+  tsconfig.fleet.json tsconfig.web.json ./
 COPY src ./src
 COPY modules ./modules
 
@@ -22,11 +22,19 @@ COPY modules ./modules
 RUN cd modules/mcp && npm ci --omit=dev
 
 # Fleet build: module checkouts compile too (their test harnesses
-# excluded). Non-TS runtime assets (a module's migrations/) ride
-# into dist-modules beside the compiled entry that resolves them.
+# excluded). Non-TS runtime assets ride into dist-modules beside the
+# compiled entries: migrations/ dirs AND each module's
+# nano-dashboard.json descriptor (A6 — without the descriptor copy,
+# prod shows zero module windows while the workstation works).
 RUN npm run build:fleet \
  && cd modules \
  && find . -type d -name migrations \
+      -not -path '*/node_modules/*' \
+      -exec cp -r --parents {} ../dist-modules/ \; \
+ && find . -name nano-dashboard.json \
+      -not -path '*/node_modules/*' \
+      -exec cp --parents {} ../dist-modules/ \; \
+ && find . -type d -name nano-dashboard-assets \
       -not -path '*/node_modules/*' \
       -exec cp -r --parents {} ../dist-modules/ \; \
  && cd .. \

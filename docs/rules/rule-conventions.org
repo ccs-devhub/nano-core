@@ -12,7 +12,8 @@
   - Variables and parameters: =snake_case= (=module_name=, =guild_id=).
   - Types, interfaces, classes: =PascalCase=. Filenames: =kebab-case=.
   - EXCEPTION: =src/tui/**= relaxes casing (React components are
-    PascalCase by JSX law) and parameter typedefs. Only there.
+    PascalCase by JSX law) and parameter typedefs; =src/web/client/**=
+    relaxes the same way (Vue SFC law). Only there.
 
 * Structural rules
   - Explicit return types and typed parameters EVERYWHERE (including
@@ -35,8 +36,10 @@
   - Public surfaces speak plain JSON (ids in, summary objects out) so
     AI/MCP consumers can call them without discord.js knowledge.
   - Core provides CONNECTIONS, not features: no moderation, leveling,
-    economy, dashboards, translations, entity caches, or REST queues
-    (discord.js already rate-limits and caches).
+    economy, translations, entity caches, or REST queues (discord.js
+    already rate-limits and caches). The GENERIC modular dashboard
+    host (=src/web/=) is the WEB CONNECTION, like the TUI;
+    product-specific dashboards hard-coded in core remain forbidden.
 
 * Verification
   =npm run lint= must exit 0 problems; =npm run build= (tsc strict) and

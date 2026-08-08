@@ -1,7 +1,14 @@
 import { execSync } from 'node:child_process';
 
+import { scaffoldModule } from '@/cli/scaffold.js';
 import { auditCommands, deleteAllCommands, syncCommands } from
   '@/misc/utility/command-sync.js';
+import type { DashboardAuditReport } from
+  '@/misc/utility/dashboard-audit.js';
+import { auditDashboardDescriptor } from
+  '@/misc/utility/dashboard-audit.js';
+import type { ExternalModule } from '@/registry/module-loader.js';
+import { loadExternalModules } from '@/registry/module-loader.js';
 import type { ModuleEntry } from '@/registry/nano-config.js';
 import {
   loadConfig,
@@ -35,6 +42,9 @@ const USAGE = `Usage: npm run module -- <command> [target] [flags]
 
 Commands:
   doctor               Check every layer the bot depends on
+  dashboard [path]     Audit module descriptors (default: all)
+  scaffold <name>      Generate a born-gated module skeleton
+  isolation            Audit the module/host boundary
   commands             Audit slash-command registration: local
                        definitions vs the guild and global scopes
   install <name>       Install a validated module from the nano-store
@@ -397,6 +407,35 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (COMMAND === 'dashboard') {
+    await dashboardCommand(TARGET);
+    return;
+  }
+
+  if (COMMAND === 'isolation') {
+    await isolationCommand();
+    return;
+  }
+
+  if (COMMAND === 'scaffold') {
+    if (!TARGET) {
+      process.stdout.write(USAGE);
+      process.exitCode = 1;
+      return;
+    }
+
+    const RESULT = scaffoldModule(TARGET);
+
+    process.stdout.write(
+      `${RESULT.ok ? '::' : '[ERROR]'} ${RESULT.message}\n`
+    );
+
+    if (!RESULT.ok) {
+      process.exitCode = 1;
+    }
+    return;
+  }
+
   if (COMMAND === 'list') {
     listCommand();
     return;
@@ -443,6 +482,166 @@ async function main(): Promise<void> {
   }
 
   process.stdout.write(USAGE);
+}
+
+async function loadedModuleMap(): Promise<
+  Map<string, ExternalModule['module']>
+  > {
+  const MAP = new Map<string, ExternalModule['module']>();
+
+  try {
+    for (const _external of await loadExternalModules(loadConfig())) {
+      MAP.set(_external.module.name, _external.module);
+    }
+  } catch {
+    /* Descriptor-only audits still run when a module fails to
+       load — the audit reports what it can prove. */
+  }
+  return MAP;
+}
+
+function printAudit(report: DashboardAuditReport): void {
+  const MARK = report.ok ? '\u25cf' : '\u2715';
+
+  process.stdout.write(`  ${MARK} ${report.module_dir}\n`);
+
+  for (const _issue of report.issues) {
+    const TAG = _issue.level === 'error' ? '[ERROR]' : '[warn] ';
+    process.stdout.write(`    ${TAG} ${_issue.message}\n`);
+  }
+}
+
+/** `dashboard [path]` — audit one descriptor, or every local one. */
+async function dashboardCommand(target?: string): Promise<void> {
+  const MODULES = await loadedModuleMap();
+  const TARGETS: string[] = [];
+
+  if (target) {
+    TARGETS.push(target);
+  } else {
+    for (const _entry of loadConfig().modules) {
+      const SPEC = typeof _entry === 'string'
+        ? _entry
+        : _entry.spec;
+
+      if (SPEC.startsWith('.') || SPEC.startsWith('/')) {
+        TARGETS.push(SPEC);
+      }
+    }
+  }
+
+  process.stdout.write('\n  \u258d dashboard descriptor audit\n\n');
+
+  let failed = false;
+
+  for (const _dir of TARGETS) {
+    const NAME = _dir.split('/').pop() ?? _dir;
+    const REPORT = auditDashboardDescriptor(
+      _dir,
+      MODULES.get(NAME)
+    );
+
+    printAudit(REPORT);
+
+    if (!REPORT.ok) {
+      failed = true;
+    }
+  }
+
+  if (failed) {
+    process.exitCode = 1;
+  }
+}
+
+const ISOLATION_IMPORT_PATTERN =
+  /from\s+['"][^'"]*modules\//;
+const ISOLATION_DEEP_BARREL_PATTERN =
+  /from\s+['"]@ccs-devhub\/nano-core\/[^'"]+['"]/;
+
+/** `isolation` — the boundary sweep the audit agents ran, as a
+    permanent gate: src/ never imports from modules/, module
+    checkouts import only the bare barrel. */
+async function isolationCommand(): Promise<void> {
+  const FS = await import('node:fs');
+  const PATH_MOD = await import('node:path');
+  const VIOLATIONS: string[] = [];
+
+  function walk(
+    dir: string,
+    on_file: (path: string) => void
+  ): void {
+    for (const _entry of FS.readdirSync(dir)) {
+      if (_entry === 'node_modules' || _entry === 'dist' ||
+          _entry.startsWith('.')) {
+        continue;
+      }
+
+      const FULL = PATH_MOD.join(dir, _entry);
+
+      if (FS.statSync(FULL).isDirectory()) {
+        walk(FULL, on_file);
+      } else if (/\.(ts|tsx|vue|mjs)$/.test(_entry)) {
+        on_file(FULL);
+      }
+    }
+  }
+
+  walk('src', (path: string): void => {
+    /* The scaffold generator EMBEDS module templates as strings —
+       its content is output, not imports. */
+    if (path.endsWith('cli/scaffold.ts')) {
+      return;
+    }
+
+    const BODY = FS.readFileSync(path, 'utf8');
+
+    if (ISOLATION_IMPORT_PATTERN.test(BODY)) {
+      VIOLATIONS.push(`${path}: imports from modules/`);
+    }
+  });
+
+  try {
+    for (const _entry of FS.readdirSync('modules')) {
+      const DIR = PATH_MOD.join('modules', _entry);
+
+      if (!FS.statSync(DIR).isDirectory()) {
+        continue;
+      }
+
+      walk(DIR, (path: string): void => {
+        if (path.includes(PATH_MOD.join(DIR, 'node_modules'))) {
+          return;
+        }
+
+        const BODY = FS.readFileSync(path, 'utf8');
+
+        if (ISOLATION_DEEP_BARREL_PATTERN.test(BODY)) {
+          VIOLATIONS.push(`${path}: deep barrel import`);
+        }
+
+        if (/from\s+['"](\.\.\/){2,}/.test(BODY)) {
+          VIOLATIONS.push(`${path}: escapes the module checkout`);
+        }
+      });
+    }
+  } catch {
+    /* No modules/ dir — a bare core checkout is fine. */
+  }
+
+  process.stdout.write('\n  \u258d isolation audit\n\n');
+
+  if (VIOLATIONS.length === 0) {
+    process.stdout.write(
+      '  \u25cf boundary clean: src/ never reaches modules/, ' +
+      'modules import only the bare barrel.\n'
+    );
+    return;
+  }
+
+  for (const _violation of VIOLATIONS) {
+    process.stdout.write(`  \u2715 ${_violation}\n`);
+  }
+  process.exitCode = 1;
 }
 
 await main();

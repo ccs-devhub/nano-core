@@ -1,0 +1,293 @@
+#+TITLE: Deploy Runbook: The Dashboard Public Path
+#+AUTHOR: Cristian D. Moreno
+#+OPTIONS: toc:t num:t H:3
+#+LANGUAGE: en
+
+Command-level runbook for shipping the dashboard to prod behind a
+Cloudflare tunnel. Live state verified read-only 2026-08-07. Every
+step is marked AI-RUNNABLE or OWNER-KEYSTROKE (secrets, git,
+Cloudflare dashboard).
+
+* STOP - the premise (REWRITTEN 2026-08-07, end of the hardening)
+  THE HARDENING NOW EXISTS IN THE TREE. All eleven launch-blocking
+  fixes landed (F1 F3 F4 F5a F7 F9 F13 F14 F16 F18 F27) plus the
+  round-2 tail (F21 F22 F23 F24 F25 F26 F28 F29 F30 F31 F32, Q7
+  TTL=2). =src/web/access.ts= carries the origin Access-JWT layer -
+  NOTE: it ARMS ONLY when =access_team_domain= is set, so the flip
+  must fill it in the same edit that sets =enabled: true=.
+
+  THE VALIDATION IMAGE =nano-core:0.5.0-rc1= IS BUILT AND LOADED ON
+  THE VPS: =dist/web= present, EXACTLY ONE descriptor (roles),
+  self-hosted fonts, THE PHASE-1 FREEZE honored (.dockerignore
+  excludes the six unbanked module trees; =tsconfig.web.json= joined
+  the Dockerfile COPY - its absence broke the fleet build). The
+  monitoring patch is LIVE on the VPS (=/srv/ops/heartbeat-check.py=
+  + the rewritten =/srv/ops/fleet-alert.sh=; backup at
+  =fleet-alert.sh.bak-2026-08-07=).
+
+  WHAT STILL BLOCKS THE FLIP (all owner-keystroke, exact order in
+  =.drafts/DEPLOY_FLIP_2026-08-07.txt=): the BANK (core + roles only,
+  six modules frozen) and the final tagged image · the portal
+  redirect URI · =DISCORD_CLIENT_SECRET= + =BOT_OWNER_ID= in the
+  VPS =.env= · the real tunnel token (placeholder confirmed live
+  2026-08-07) · the Access app BEFORE the route · the flip edit.
+
+* Preamble - every shell that ssh's
+  #+begin_src bash
+  export SSH_AUTH_SOCK="$XDG_RUNTIME_DIR/ssh-agent.socket"
+  export REPO="/run/media/kyonax/Da_ Disk/dev/github-kyonax/nano-core"
+  warp-cli tunnel ip list | grep 2.24.83.242   # THE WARP LAW, verify FIRST
+  #+end_src
+
+* Phase 0 - land the code (GATE)
+  Implement F1, F3, F4, F5a, F7, F9, F13, F14, F16, F18, F27, in the
+  order F13 before F6 and F13 before F7.
+
+  TWO STRUCTURAL PREREQUISITES the plan under-states:
+  1. THE =web= ZOD OBJECT IS CLOSED AND STRIPS UNKNOWN KEYS SILENTLY
+     (=nano-config.ts:131-151=). =trust_proxy_header=,
+     =access_team_domain= and =access_aud= must enter the SCHEMA
+     before they enter any config file, or they produce no error, no
+     warning and no effect.
+  2. =jose= is the project's first new runtime dependency. Per round-2
+     N17, the one-shot =crypto.verify= runs on the MAIN THREAD; on 1
+     vCPU offloading buys nothing and the cost is ~25-60 us.
+
+  Gates (AI-RUNNABLE):
+  #+begin_src bash
+  cd "$REPO"
+  npm run lint && npx vitest run && npm run build && npm run doctor
+  #+end_src
+
+  The degraded smoke - proves the bot survives a missing secret:
+  #+begin_src bash
+  env -u DISCORD_CLIENT_SECRET npm run dev
+  #+end_src
+  Expect the bot to log in and warn =DISCORD_CLIENT_SECRET not set -
+  web dashboard not started=. Failure tell: the process throws, or
+  =ss -tln= shows 4777 bound.
+
+  OWNER-KEYSTROKE: commit both repos, bump version, tag. Image tag =
+  git tag.
+
+* Phase 1 - build and transfer (AI-RUNNABLE)
+  Build on the WORKSTATION. The VPS is 1 vCPU running the bot and has
+  no checkout.
+  #+begin_src bash
+  export TAG=0.5.0
+  cd "$REPO" && docker build -t "nano-core:$TAG" .
+  #+end_src
+
+  MANDATORY PRE-TRANSFER ASSERTION - the step whose absence shipped
+  the current dashboard-less image:
+  #+begin_src bash
+  docker run --rm --entrypoint sh "nano-core:$TAG" -c '
+    ls -l /app/dist/web/app/index.html &&
+    find /app/modules -name nano-dashboard.json &&
+    find /app/modules -type d -name nano-dashboard-assets'
+  #+end_src
+  Expect exactly ONE descriptor hit (=modules/roles=; embed-styler,
+  mcp and synapse ship none). Any "No such file" means the image is
+  the current broken shape - do not transfer it.
+
+  #+begin_src bash
+  ssh nano-vps 'df -h / | tail -1'
+  docker save "nano-core:$TAG" | gzip -1 | ssh nano-vps 'gunzip | docker load'
+  ssh nano-vps 'docker images nano-core --format "{{.Tag}}\t{{.Size}}"'
+  #+end_src
+  Expect the new tag plus =0.4.0-r1=, =0.4.0=, =0.3.1= (the weekly
+  prune is dangling-only, so tagged rollbacks survive).
+
+* Phase 2 - prod configuration
+** .env (OWNER-KEYSTROKE - secrets)
+   Append to =/srv/bots/the-creator/.env=, mode stays 0600 root:root:
+   =DISCORD_CLIENT_SECRET= (from =pass=) and =BOT_OWNER_ID=.
+   Without the secret the dashboard REFUSES TO LISTEN; without the
+   owner id NOBODY holds host tier.
+
+   Verify without disclosing (AI-RUNNABLE):
+   #+begin_src bash
+   ssh nano-vps 'stat -c "%a %U:%G" /srv/bots/the-creator/.env; cut -d= -f1 /srv/bots/the-creator/.env'
+   #+end_src
+
+** compose.yml (AI-RUNNABLE)
+   Change =image:= to the new tag and add, changing NOTHING else:
+   #+begin_src yaml
+   ports:
+     - "127.0.0.1:4777:4777"
+   #+end_src
+
+** nano.config.json - THE BIND LAW (AI-RUNNABLE)
+   The file has no =web= block today. Add:
+   #+begin_src js
+   "web": {
+     "enabled": true,
+     "bind": "0.0.0.0",
+     "port": 4777,
+     "public_url": "https://bot.kyonax.tech",
+     "session_ttl_h": 2,
+     "trust_proxy_header": false,
+     "access_team_domain": "<team>.cloudflareaccess.com",
+     "access_aud": "<64-char hex AUD tag>"
+   }
+   #+end_src
+
+   =bind: 0.0.0.0= is non-negotiable - a docker publish forwards to
+   the container's EXTERNAL interface and can never reach a server
+   bound to the container's own loopback. Without it the published
+   port reaches nothing and THE FAILURE PRESENTS AS A CLOUDFLARE 502.
+
+   =public_url= is load-bearing twice: it makes the OAuth
+   =redirect_uri= public instead of loopback, and =isSecure()= is
+   literally =public_url.startsWith('https://')= - a PREFIX TEST ON
+   THE CONFIG STRING, and the only thing emitting the Secure cookie
+   flag.
+
+   ALWAYS validate before any restart - =loadConfig= THROWS on an
+   invalid file, so a typo is a bot outage:
+   #+begin_src bash
+   ssh nano-vps 'python3 -m json.tool /srv/bots/the-creator/state/nano.config.json > /dev/null && echo JSON-OK'
+   #+end_src
+
+* Phase 3 - Cloudflare (ALL OWNER-KEYSTROKE)
+  No Cloudflare API token exists in =pass=; every step is dashboard
+  work. Dependency order, all four hazards as one sequence:
+
+  1. DISCORD PORTAL FIRST. Register
+     =https://bot.kyonax.tech/auth/callback= exactly, no trailing
+     slash. Discord rejects unregistered redirect URIs, so setting
+     =public_url= first kills login outright.
+  2. TUNNEL TOKEN. Replace the placeholder in
+     =/etc/cloudflared/tunnel.env= (currently 26 chars; a real token
+     is ~180+), keep 0600 cloudflared:cloudflared, then
+     =systemctl enable --now cloudflared=. Expect four
+     =Registered tunnel connection= lines.
+  3. ACCESS APPLICATION - BEFORE THE ROUTE. Self-hosted,
+     =bot.kyonax.tech=, Allow / owner email / One-time PIN. ENABLE
+     MANAGED OAUTH so Access returns 401 not a 302 (without it an
+     expired session turns every XHR into an opaque HTML redirect the
+     SPA cannot interpret). RECORD THE AUD TAG - it is the audience
+     claim F13 pins, and without it the JWT check either fails closed
+     or accepts a token minted for ANY application in ANY account.
+  4. TUNNEL ROUTE. Public Hostname =bot= . =kyonax.tech= -> HTTP ->
+     =127.0.0.1:4777=. THIS AUTO-CREATES THE CNAME - do not hand-create
+     DNS, and ignore the Hostinger panel entirely (its records for
+     this zone are INERT; the domain is delegated to Cloudflare).
+     =127.0.0.1:4777= is correct here and does not contradict the bind
+     law: cloudflared runs on the HOST, where the published socket
+     genuinely is loopback.
+  5. /health APPLICATION - a SEPARATE path-scoped app with a SERVICE
+     AUTH policy and token. NOT a Bypass: Bypass disables all Access
+     controls AND logging. Order it above the parent app. Blocked on
+     F6, which is blocked on F13.
+  6. RATE-LIMIT RULE. Round 2 reallocated the single free rule to
+     PLAN B - with Access fronting the hostname, anonymous traffic
+     never reaches =/auth/login=, so the rule would guard an
+     already-unreachable surface.
+
+* Phase 4 - the flip (AI-RUNNABLE)
+  #+begin_src bash
+  ssh nano-vps 'cd /srv/bots/the-creator && docker compose up -d'
+  ssh nano-vps 'sleep 45; docker inspect the-creator --format "{{.State.Health.Status}} restarts={{.RestartCount}}"; ss -tlnp | grep 4777'
+  #+end_src
+  Expect =healthy restarts=0= and EXACTLY ONE socket line,
+  =127.0.0.1:4777=. If =ss= shows =0.0.0.0:4777= the publish lost its
+  loopback prefix - STOP AND REVERT, ufw's deny-routed does not
+  reliably cover docker's DNAT chain.
+
+  NEVER =docker compose down=. It destroys =the-creator_default= and
+  the next =up= allocates a fresh /24 from the =172.17.0.0/12= pool
+  with a different gateway.
+
+* Phase 5 - verification
+  Capture a PRE-FLIP baseline over three heartbeat intervals first.
+  Reference band from 2026-08-07: guilds 17 · =loop_p99_ms= 20.2 flat
+  · =rest_429s= 0 · =rss_mb= 119.2 · =ws_ping_ms= 45-55 (NOT 26 - the
+  stated figure was the bottom of the range) · =heap_used_mb= 29-30 ·
+  =db.wal_mb= 1.9 · container 68 MiB of 512m · CPU 0.16%.
+
+  1. ORIGIN JWT REJECTS A HOST-LOCAL REQUEST (blocked on F13):
+     #+begin_src bash
+     ssh nano-vps '
+       curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:4777/api/me
+       curl -s -w "\n%{http_code}\n" -H "CF-Connecting-IP: 8.8.8.8" http://127.0.0.1:4777/api/me
+       curl -s -w "\n%{http_code}\n" -H "Cf-Access-Jwt-Assertion: not.a.jwt" http://127.0.0.1:4777/api/me'
+     #+end_src
+     Expect 403 on all three from the JWT layer, BEFORE routing. Today
+     you get 401 from the session guard - A 401 HERE IS A FAILING
+     RESULT, not a passing one.
+  2. ASSET ROUTE returns =private=, =nosniff=, and
+     =cf-cache-status: BYPASS= or =DYNAMIC=. A =HIT= on an
+     authenticated per-guild response is an incident: purge the zone
+     cache and revert.
+  3. A GUILD YOU ADMINISTER BUT THE BOT IS ABSENT FROM returns 404 on
+     =/modules=, =/instance=, =/descriptor=, =/config=, =/commands=.
+     Today only =/reference= and =/members/:uid= do.
+  4. THE BOT SURVIVED - run for at least THREE heartbeat intervals
+     (15 min); =loop_p99_ms= is a 300-second window and one sample
+     proves nothing. Abort on any restart, on guilds != 17, or on
+     =loop_p99_ms= > 100 for two consecutive heartbeats (that is the
+     extraction trigger firing).
+  5. THE ROUND-TRIP INVARIANT: edit one widget in the dashboard and
+     confirm =/roles-config show= in Discord reflects it - proves the
+     write path and the guild-store cache invalidation.
+
+* Rollback
+  Either path alone suffices; neither touches the bot's Discord
+  connection, its database or its volume.
+
+  PATH 1 - disable the app (AI-RUNNABLE). Set =web.enabled= false,
+  validate the JSON, =docker compose up -d=. Expect =healthy= and
+  4777 CLOSED. Note =web.enabled= is read at BOOT, so a restart is
+  required; health reports =web: disabled= as HEALTHY, so the alerter
+  will not fire.
+
+  PATH 2 - delete the tunnel route (OWNER-KEYSTROKE). The CNAME goes
+  with it. The bot never knew the route existed.
+
+  PATH 3 - full image rollback: point =image:= back at
+  =nano-core:0.4.0-r1=, remove the =ports:= block, =up -d=.
+
+* Failure modes
+  The first two waste the most time because BOTH PRESENT AS CLOUDFLARE
+  PROBLEMS AND NEITHER IS ONE.
+
+  | # | Symptom | Real cause | Fix |
+  |---+---------+------------+-----|
+  | G1 | Access login succeeds then CLOUDFLARE 502; cloudflared logs =connection refused= | =web.bind= left at the =127.0.0.1= default - the server bound the CONTAINER's loopback. Host =ss= still shows the socket because docker-proxy binds regardless | Set =bind: 0.0.0.0=. Confirm the CONTAINER LOG line =listening on http://0.0.0.0:4777/= - =ss= on the host cannot detect this |
+  | G2 | Rate limiting appears not to work; a loopback-peer trust gate never matches | Requests arrive via the compose bridge, gateway =172.18.0.1=, and the subnet is re-allocated if the network is ever recreated | Never use the peer address as a trust signal or rate-limit key. F13's JWT is the only anchor |
+  | G3 | A config key is in the file and does nothing, silently | The =web= zod object strips unknown keys | Add the key to the schema first; verify through the app, not the file |
+  | G4 | Bot will not start, restart-loops | Malformed =nano.config.json= - =loadConfig= refuses to boot on defaults | Always =python3 -m json.tool= first; restore from =state/backups/= |
+  | G5 | Login works, ZERO configurable modules | The image lacks descriptors - the current =0.4.0-r1= shape | Run the pre-transfer assertion |
+  | G7 | Nothing on 4777, health degraded, bot fine on Discord | =DISCORD_CLIENT_SECRET= missing. A CORRECT, DESIGNED failure | Add it to =.env= |
+  | G9 | Discord shows =invalid_redirect_uri= | =public_url= went https before the portal URI was registered | Register the URI first - it is additive and free |
+  | G10 | Loopback smoke test can no longer log in | =public_url= is https so =Secure= suppresses the cookie on http | Prove login on the dev bot first |
+  | G12 | Nothing visible - and that is the danger | The tunnel route was created before the Access application | Always Access app, then route |
+  | G14 | An admin of guild A sees guild B's asset; =cf-cache-status: HIT= | =cache-control: public= on a =guardRead= route with an image extension | F5a, one line. Until then do not expose |
+  | G19 | Webhook fires constantly on a healthy bot | =rest_429s= counts discord.js PRE-EMPTIVE bucket waits, not only real 429s | Alert on a DELTA TREND, never on non-zero |
+  | G21 | Restarts consume the full 20 s grace period | =server.close()= with no =closeIdleConnections()= and a tunnel holding keep-alives | F4 |
+
+* The monitoring patch
+  =fleet-alert.sh= reads container status, restart count, backup age,
+  a log-scraped guild count, host disk and host memory. IT NEVER OPENS
+  =heartbeat.json=, so =loop_p99_ms=, =rest_429s=, =db.wal_mb=,
+  =db.sqlite_mb=, =heap_used_mb=/=heap_limit_mb= and
+  =gateway.invalidated_count= are all emitted every 300 s and all
+  discarded.
+
+  =jq= IS NOT INSTALLED on this VPS. =python3= 3.13.5 is. Write the
+  patch in python3; installing jq is an unnecessary state change.
+
+  The two rules that matter:
+  - EVENT-LOOP P99 is the extraction trigger - alert on sustained
+    >100 ms across TWO consecutive sweeps (the alerter runs every 5
+    min and the heartbeat is 300 s, so one sweep is one sample).
+    Never on a single spike.
+  - =rest_429s= IS A TREND, NOT A THRESHOLD. It includes pre-emptive
+    bucket waits, so non-zero is normal and healthy. Alert on >=25 new
+    events per 5-minute window, twice consecutively. A counter that
+    went DOWN means the process restarted - treat the previous value
+    as 0.
+
+  Add a tunnel-liveness check gated on the unit being enabled, so it
+  stays silent until the owner completes the wiring.

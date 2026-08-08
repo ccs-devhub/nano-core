@@ -1,0 +1,38 @@
+// F30: the two brand fonts, SELF-HOSTED (latin subset, 400 + 700).
+// A fonts CDN would leak every visitor's IP/user-agent to a third
+// party and break the CSP draft (font-src 'self'); these woff2
+// files ship inside the bundle instead. No external font host, ever.
+
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../assets/fonts/poppins-latin-400.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('../assets/fonts/poppins-latin-700.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Space Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../assets/fonts/space-mono-latin-400.woff2')
+    format('woff2');
+}
+
+@font-face {
+  font-family: 'Space Mono';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('../assets/fonts/space-mono-latin-700.woff2')
+    format('woff2');
+}

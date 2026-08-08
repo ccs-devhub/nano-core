@@ -25,6 +25,13 @@ const SCHEMA = z.object({
   announce: z.boolean().default(true),
 });
 
+/* Ceiling fixtures: a passthrough schema so the write ceiling — not
+   zod — decides, and the ceiling numbers pinned to the contract. */
+const LOOSE_MODULE = 'loose';
+const LOOSE_SCHEMA = z.looseObject({});
+const NODE_LIMIT = 2000;
+const STRING_LIMIT = 8192;
+
 describe('GuildStore', (): void => {
   let root: string;
   let database: DatabaseService;
@@ -195,11 +202,14 @@ describe('GuildStore', (): void => {
     SPIED.getGuildModuleConfig(GUILD_A, MODULE);
     expect(CALLS.length).toBe(1);
 
+    /* Every write now loads the stored rows once for the C1
+       downgrade gate (stored version > registered refuses), so a
+       set costs one load; the post-write read is uncached (+1). */
     SPIED.setGuildModuleConfig(GUILD_A, MODULE, {
       xp_per_message: CUSTOM_XP,
     });
     const CONFIG = SPIED.getGuildModuleConfig(GUILD_A, MODULE);
-    expect(CALLS.length).toBe(2);
+    expect(CALLS.length).toBe(3);
     expect(CONFIG.xp_per_message).toBe(CUSTOM_XP);
   });
 
@@ -214,4 +224,88 @@ describe('GuildStore', (): void => {
         .toBe(false);
       expect(OFFLINE.listGuildsFor(MODULE)).toEqual([]);
     });
+
+  it('refuses writes for a module with no registered schema',
+    (): void => {
+      const SET = store.setGuildModuleConfig(GUILD_A, 'ghost', {
+        anything: 1,
+      });
+      expect(SET.ok).toBe(false);
+
+      if (!SET.ok) {
+        expect(SET.error).toContain('no registered config schema');
+      }
+
+      const PATCH = store.patchGuildModuleConfig(GUILD_A, 'ghost', {
+        anything: 1,
+      });
+      expect(PATCH.ok).toBe(false);
+      expect(store.listGuildsFor('ghost')).toEqual([]);
+    });
+
+  it('enforces the write ceiling: container depth', (): void => {
+    store.registerSchema(LOOSE_MODULE, { schema: LOOSE_SCHEMA });
+
+    const SIX_LEVELS = {
+      a: { b: { c: { d: { e: { f: 1 } } } } },
+    };
+    expect(
+      store.setGuildModuleConfig(GUILD_A, LOOSE_MODULE, SIX_LEVELS).ok
+    ).toBe(true);
+
+    const SEVEN_LEVELS = {
+      a: { b: { c: { d: { e: { f: { g: 1 } } } } } },
+    };
+    const REFUSED = store.setGuildModuleConfig(
+      GUILD_A,
+      LOOSE_MODULE,
+      SEVEN_LEVELS
+    );
+    expect(REFUSED.ok).toBe(false);
+
+    if (!REFUSED.ok) {
+      expect(REFUSED.error).toContain('nesting deeper');
+    }
+  });
+
+  it('enforces the write ceiling: total values', (): void => {
+    store.registerSchema(LOOSE_MODULE, { schema: LOOSE_SCHEMA });
+    const MANY: Record<string, unknown> = {};
+
+    for (let index = 0; index < NODE_LIMIT + 1; index += 1) {
+      MANY[`k${index}`] = 1;
+    }
+
+    const REFUSED = store.setGuildModuleConfig(
+      GUILD_A,
+      LOOSE_MODULE,
+      MANY
+    );
+    expect(REFUSED.ok).toBe(false);
+
+    if (!REFUSED.ok) {
+      expect(REFUSED.error).toContain(`more than ${NODE_LIMIT}`);
+    }
+  });
+
+  it('enforces the write ceiling: string bytes', (): void => {
+    store.registerSchema(LOOSE_MODULE, { schema: LOOSE_SCHEMA });
+
+    const AT_LIMIT = { note: 'x'.repeat(STRING_LIMIT) };
+    expect(
+      store.setGuildModuleConfig(GUILD_A, LOOSE_MODULE, AT_LIMIT).ok
+    ).toBe(true);
+
+    const OVER = { note: 'x'.repeat(STRING_LIMIT + 1) };
+    const REFUSED = store.setGuildModuleConfig(
+      GUILD_A,
+      LOOSE_MODULE,
+      OVER
+    );
+    expect(REFUSED.ok).toBe(false);
+
+    if (!REFUSED.ok) {
+      expect(REFUSED.error).toContain('string longer');
+    }
+  });
 });

@@ -9,6 +9,12 @@
  */
 export const TEXT_GUILD_ONLY =
   'This command can only be used in a server.';
+export const TEXT_COMMAND_GATED_OFF =
+  'This command is turned off in this server.';
+
+export const TEXT_COMMAND_GATED_LIMITED =
+  'This command is limited to specific roles or members here.';
+
 export const TEXT_DISABLED_MODULE =
   'This command belongs to a disabled module.';
 export const TEXT_COOLDOWN = 'Slow down, try again in {seconds}s.';

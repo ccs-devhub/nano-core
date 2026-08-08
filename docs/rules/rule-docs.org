@@ -1,0 +1,173 @@
+#+TITLE: Rule: Documentation (all repos, every .org)
+
+* Purpose
+  The house invented five document kinds and legislated none of
+  them. This file is that law. It binds nano-core and every
+  NanoModule repo.
+
+  Precedence, absolute: code/schema > rule file > .ai.org >
+  .doc.org. A .doc.org never introduces a fact; it summarises
+  facts that live elsewhere.
+
+* Scope
+  Every tracked =.org= file in nano-core and in every module
+  repo. Untracked =.md= review artifacts are exempt (they are
+  ephemeral by construction and die with their session).
+
+* The file kinds
+  - =docs/rules/rule-<subsystem>.org= - SUBSYSTEM LAW. Binding,
+    prescriptive, terse. Read before writing code in that
+    subsystem. Opens =* Purpose=, closes =* Verification= naming
+    the exact gate commands.
+  - =<unit>.ai.org= - AGENT RECIPE. Imperative, contract-first,
+    exhaustive. Headings ALL-CAPS, body flush left. Undated - it
+    tracks a schema and must be correct at all times.
+  - =<unit>.doc.org= - HUMAN UNIT FILE. Descriptive, never
+    instructional. Opens with an =* IDENTITY= table, closes with a
+    dated ship-state section.
+  - =MANUAL.org= - DEEP HUMAN DOC. =#+OPTIONS: toc:t num:t H:3=.
+    Table-heavy. Every command, every config key, worked examples.
+  - =README.org= - FRONT DOOR. Identity, install, quickstart,
+    license. A second language gets =README-<LANG>.org=.
+  - =docs/MODULE-SPEC.org= - AUTHOR SPEC (nano-core only). The
+    NanoModule contract with a copyable source block.
+
+* THE PAIRED-UNIT LAW
+  - A UNIT is a subsystem with its own authoring contract that
+    OUTSIDE code must write against. =src/web/= is one (modules
+    author =nano-dashboard.json=). =src/tui/= is one (modules
+    author =nano-tui.json=). The dispatcher, the store and the
+    services layer are NOT - modules consume them, they do not
+    author for them.
+  - Every unit ships the LAW (=rule-<unit>.org=) and the RECIPE
+    (=<unit>.ai.org=). It ships the DESCRIPTION
+    (=<unit>.doc.org=) only where the unit has no repo of its
+    own; a module repo already carries README + MANUAL, so a
+    third human document has no distinct audience.
+  - EVERY =.ai.org= OPENS WITH THE AUDIENCE PARAGRAPH naming (a)
+    its human sibling, (b) its governing rule file, (c) the code
+    file that is the truth. This is the sync mechanism: it makes
+    drift LOCATABLE, because you can always find the file that
+    decides the argument.
+
+* THE REQUIRED SET (every module repo)
+  All seven are required at the phase gate, not after it.
+  - =README.org= - reduced metadata block, =* Install= (store and
+    checkout paths plus the nano.config.json entry), declared
+    intents with privileged ones flagged, =* Quickstart=,
+    =* License=.
+  - =MANUAL.org= - a single-source declaration in the preamble,
+    =* Architecture=, a command-reference table (one row per
+    command PATH), a config-reference table (one row per schema
+    key with type, default and tier), worked examples, storage
+    and performance if it owns tables, the provides API if it
+    exports one, health.
+  - =<name>.ai.org= - the AUDIENCE paragraph, the descriptor as
+    shipped, the gates that protect it (name every test file and
+    what it pins), extending the module (one entry per extension
+    axis), ship discipline.
+  - =nano-dashboard.json= - REQUIRED AT BIRTH. It is the only
+    documentation most server admins will ever read. A =help= map
+    on EVERY leaf; =help= and =explain= are distinct texts.
+  - Command help metadata - a NanoHelpCard per command AND per
+    subcommand path. Mechanically gated by =auditModuleHelp=.
+  - =CHANGELOG.org= - from the first tagged release. One
+    =** <version> - <date>= per release; name the minimum
+    nano-core version when the peer range moves.
+  - =LICENSE= - must match =package.json= and the README section.
+
+* Structure
+  - Max line 80 on PROSE. Org tables, =#+begin_src= bodies and
+    raw HTML blocks are EXEMPT - measured practice holds this
+    exactly, and no non-table prose line in any manual exceeds
+    80.
+  - =verbatim= markup for every identifier, filename, config key,
+    command, glyph and env var. Exceptionless.
+  - =*bold*= for conceptual emphasis only, sparingly.
+  - =[[file:path][Label]]= for internal links; every link must
+    resolve.
+  - Tables for every enumerable reference surface.
+  - =#+begin_src <lang>= for every sample, language always
+    declared.
+  - No emojis anywhere (inherited from rule-conventions).
+
+* DOC-DRIFT - the defect class
+  A defect where DOCUMENTED behaviour does not match ACTUAL
+  behaviour. Filed and fixed like a code defect, never as "docs
+  cleanup". Four subtypes:
+  - D-DRIFT - the law claims a control the code does not
+    implement.
+  - D-SCOPE - the law is true somewhere and generalised
+    everywhere.
+  - D-INVENT - the document asserts a fact that is not so.
+  - D-OMIT - the document is silent on a load-bearing fact.
+
+  D-OMIT has a measured blast radius and is the reason this law
+  exists: in the 2026-08-07 external review, SEVEN independent
+  reviewers all asserted the dashboard has no request body size
+  limit; all seven were wrong; the cap is at
+  =src/web/module-routes.ts:80= and the briefing simply never
+  stated it. The inverse is equally measured - writing the
+  opcode-8 law INTO the briefing cut its repeat rate from 3-of-4
+  to 1-of-7. Documents steer reviewers; omissions steer them off
+  a cliff.
+
+* THE TOUCH RULE
+  When a change lands under a rule file's declared scope, every
+  claim that rule file makes about the changed symbols becomes
+  part of THAT CHANGE'S OWN review surface. Not a later sweep.
+  The same diff.
+
+* THE CLAIM LEDGER
+  Every load-bearing security or behaviour claim in a rule file
+  carries the =file:line= it is verifiable against, inline. Once
+  claims carry citations, a diff that moves a cited line
+  mechanically flags the claim for re-read - the only automatable
+  half of a problem that is otherwise unautomatable.
+
+* What is mechanical and what is not
+  MECHANICAL (build these):
+  - =auditDashboardDescriptor= in EVERY module suite. It is
+    barrel-exported and the scaffold already generates the call.
+  - =npm run docs:audit= - required-file presence, =#+TITLE=
+    present, 80 columns on prose, zero emoji, every
+    =[[file:...]]= link resolves.
+  - Command-reference bijection - every path from
+    =subcommandPaths()= appears in MANUAL and vice versa.
+  - Config-reference bijection - every zod key appears in the
+    MANUAL config table.
+  - Citation resolution - every =file:line= in every rule file
+    resolves to an existing line.
+  - =lint-staged= gains an =*.org= entry.
+
+  NOT MECHANICAL (human discipline; do not oversell the tooling):
+  - Whether a SENTENCE IS TRUE. No structural check catches
+    "three layers" describing two. That is the entire D-DRIFT
+    class and it is the class that actually bit.
+  - Whether a documented scope matches the call graph.
+  - Tone, the prose law, guild-neutrality of examples.
+  - Whether a worked example still produces the described
+    outcome.
+
+  The honest framing: the checks buy PRESENCE, SHAPE and
+  REACHABILITY; only the touch rule buys TRUTH.
+
+* The bundled-module exemption
+  =modules/embed-styler= and =modules/synapse= are core-bundled
+  reference modules documented inside =docs/MANUAL.org= rather
+  than in their own folders. Ratified. =modules/mcp= is the
+  exception - it has real operator surface and needs at minimum
+  its own =mcp.ai.org=.
+
+  Reference-implementation ruling: SYNAPSE is the MINIMAL
+  reference (contract shape); ROLES is the FULL reference (every
+  surface). Say so in MODULE-SPEC and rule-module-authoring.
+
+* Verification
+  - =npm run docs:audit= green in every repo.
+  - =auditModuleHelp= and =auditDashboardDescriptor= green in
+    every module's own suite.
+  - Zero open DOC-DRIFT defects.
+  - Every rule-file citation resolves.
+  - The scaffold emits the full required set - a law the scaffold
+    does not emit is a law nobody will follow.

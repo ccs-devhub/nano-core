@@ -26,6 +26,17 @@ modules/*/node_modules
 # enter the build context.
 modules/*/.git
 modules/*/.drafts
+
+# THE PHASE-1 FREEZE (owner ruling 2026-08-07): the six unbanked
+# module trees never enter the image until the owner unfreezes —
+# the deployed surface is the dashboard + roles (+ the standing
+# synapse/embed-styler/mcp superset).
+modules/moderation
+modules/leveling
+modules/social
+modules/billboard
+modules/announcer
+modules/oracle
 dist
 dist-modules
 *.tsbuildinfo

@@ -1,0 +1,93 @@
+#+TITLE: The Web Dashboard — UNIT FILE
+
+General documentation for the nano-core WEB DASHBOARD unit: the
+generic host that turns any module's declarative descriptor into a
+full configuration window. This file is the unit's current truth
+for humans; =web-dashboard.ai.org= is its agent sibling (operating
+recipes and the replication prescription). The binding law text
+lives in =docs/rules/rule-web.org=; this file describes, the rule
+file rules.
+
+* IDENTITY
+
+| Unit       | =web-dashboard=, the WEB CONNECTION beside the TUI      |
+| Style      | Kyonax Book (#ededed, hairlines, 8px grid, no radius)   |
+| Law        | =docs/rules/rule-web.org= (+ the skill =rules/web.md=)  |
+| Contract   | =src/lib/types/nano-dashboard.ts= (barrel-exported)     |
+| Host       | =src/web/= (server) · =src/web/client/= (Vue 3 + TS)    |
+| Gates      | lint 0 · build (vue-tsc + vite) · vitest both projects  |
+| Audited    | 2026-08-06, four-agent isolation/seam audit, all fixed  |
+
+* WHAT IT IS
+
+nano-core is a body with connections, never features. The dashboard
+is one connection: a generic web host that discovers each module's
+=nano-dashboard.json= BESIDE its entry file and renders windows,
+data views, action bars, presentation headers, and a commands
+surface from it — the host never imports module code, and a module
+never learns the host's internals. Modules and host meet only at
+five declared seams:
+
+1. The DESCRIPTOR, loaded path-based as data and zod-validated.
+2. PROVIDES function NAMES, resolved lazily per request through the
+   module registry with =guild_id= injected first and the
+   =api_version= handshake enforced.
+3. The GUILD STORE config namespace (diff-then-patch writes, C5
+   placeholder law, downgrade gate).
+4. The REGISTRY's commands + mandatory help cards (the commands
+   surface reads builders, never module files).
+5. The =nano-dashboard-assets/= directory, served size-capped and
+   traversal-safe.
+
+* THE WINDOW ANATOMY (the landing grammar)
+
+A module window reads top to bottom: the ABOUT header (media
+carousel, centered badges, muted description with bright bold
+words, command signature tags) · the RUN zone (grouped action rows,
+vertical button stacks) · CONFIGURE cards (one per functionality,
+sliders where a functionality has its own switch, plus the
+commands card with its counts) · LIVE views inline (stat strips,
+searchable tables, raw payloads beside their explanations). The
+first section on a landing never renders its divider.
+
+* THE FOUR SYSTEMS
+
+- THE LANGUAGE SYSTEM :: every descriptor text is a plain string or
+  a ={ lang: text }= map; =manifest.languages= declares a module's
+  codes (first = its default). The chrome ships en + es
+  dictionaries in =client/src/lib/i18n.ts= (dependency-free, no
+  locale routes); readers pick globally in the topbar and per
+  module in the breadcrumb. Translations live IN the module.
+- THE PRESENTATION BLOCK :: =manifest.about= — description, shields
+  badges (flat-square), media (module assets, YouTube by id, X by
+  status id — click-to-load facades, inline carousel, no modals),
+  and the command tags in signature format.
+- THE COMMANDS SURFACE + PER-GUILD GATES :: every module window
+  grows a commands section from the registry (builder JSON + help
+  cards). Guild admins may switch any command or subcommand path
+  off, or limit it to roles/members; the kernel dispatcher
+  enforces the gate before every dispatch. =/module= is never
+  gateable — the recovery guard holds in client, server, and
+  dispatcher, and the =command_gates= namespace is reserved
+  against module collisions.
+- MEMBER RESOLUTION :: one single-member endpoint (outside the
+  opcode-8 list budget) plus a reactive client cache; every
+  user-id surface shows the member's name once it resolves.
+
+* THE CLIENT LIBRARY
+
+Fifteen global components; views only compose: widget-host,
+ui-switch, ui-select, ui-table, ui-skeleton, live-stats, run-rows,
+lang-toggle, module-about, media-carousel, command-cards,
+guild-card, tier-badge, help-mark, gear-icon.
+
+* SHIP STATE (2026-08-06)
+
+Both working trees are UNCOMMITTED by law (the owner commits). The
+git pass must include the roles repo's UNTRACKED dashboard slice:
+=nano-dashboard.json=, =nano-dashboard-assets/=, and both
+dashboard test files — a clone without them ships no window. The
+roles =package.json= =file:= dependencies bind development to a
+host checkout with a built =dist/=; loosening that is an owner
+decision. The E2E walk on the dev bot is the pending gate before
+any commit.

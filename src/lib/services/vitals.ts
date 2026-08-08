@@ -35,6 +35,9 @@ export interface NanoVitals {
   heap_used_mb: number;
   heap_limit_mb: number;
   loop_p99_ms: number;
+  /** Max event-loop delay since the last reset (F32) — the spike
+      detector the p99 smooths away. */
+  event_loop_lag_max_ms: number;
   gateway: GatewayVitals;
   /** Shard assignment (S1 seam); null while unsharded. */
   shard: { id: number; count: number } | null;
@@ -110,6 +113,7 @@ export class VitalsService {
     const LOOP_P99_MS = roundOne(
       this.loop_monitor.percentile(LOOP_P99) / NS_PER_MS
     );
+    const LOOP_MAX_MS = roundOne(this.loop_monitor.max / NS_PER_MS);
     const REST_429S = this.rest_429s;
 
     if (options.reset) {
@@ -126,6 +130,7 @@ export class VitalsService {
       heap_used_mb: toMb(MEMORY.heapUsed),
       heap_limit_mb: toMb(HEAP.heap_size_limit),
       loop_p99_ms: LOOP_P99_MS,
+      event_loop_lag_max_ms: LOOP_MAX_MS,
       gateway: {
         ready: BOT.isReady(),
         ws_ping_ms: BOT.ws.ping,

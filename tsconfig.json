@@ -37,6 +37,13 @@
     ],
     "exclude": [
         "dist",
-        "modules/roles"
+        "modules/roles",
+        "modules/moderation",
+        "modules/leveling",
+        "modules/social",
+        "modules/billboard",
+        "modules/announcer",
+        "modules/oracle",
+        "src/web/client"
     ]
 }

@@ -168,8 +168,8 @@ This model ensures a free software core and respects diverse contributions, foll
     contract, with =modules/synapse/= as the reference
     implementation.
   - [[file:docs/rules/][docs/rules/]] — the laws of each subsystem
-    (conventions, services, dispatcher, store, TUI, module
-    authoring).
+    (conventions, services, dispatcher, store, TUI, the web
+    dashboard, module authoring).
   - [[https://github.com/ccs-devhub/nano-store][nano-store]] — the
     curated registry and its submission process (SUBMISSIONS.md).
 

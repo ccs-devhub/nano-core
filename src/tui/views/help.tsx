@@ -30,12 +30,12 @@ const TERMINAL_COMMANDS: [string, string][] = [
   ['npm run lint / build / test', 'development gates'],
 ];
 
+/* Only the KERNEL's own command is a literal here — every module
+   command renders live from the registry in the Commands view
+   (connections, not features: core never names a module). */
 const DISCORD_COMMANDS: [string, string][] = [
   ['/module <sub>', 'list, enable, disable, health, sync'],
-  ['/synapse scan', 'full server snapshot'],
-  ['/synapse vitals', 'core + module health'],
-  ['/synapse roles|members|channels', 'server data'],
-  ['/embed', 'themed embed (embed-styler)'],
+  ['(Commands view)', 'every module command, live from the registry'],
 ];
 
 function TableRows(

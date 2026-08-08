@@ -58,6 +58,7 @@ describe('VitalsService', (): void => {
     expect(VITALS.heap_used_mb).toBeGreaterThan(0);
     expect(VITALS.heap_limit_mb).toBeGreaterThan(0);
     expect(VITALS.loop_p99_ms).toBeGreaterThanOrEqual(0);
+    expect(VITALS.event_loop_lag_max_ms).toBeGreaterThanOrEqual(0);
     expect(VITALS.gateway.ready).toBe(false);
     expect(VITALS.gateway.invalidated_count).toBe(0);
     expect(VITALS.guild_count).toBe(0);

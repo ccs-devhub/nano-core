@@ -1,0 +1,81 @@
+THE PHASE-1 FLIP PACK - 2026-08-07
+Everything the AI could run has run. What remains is owner-keystroke,
+in THIS order. State as verified live tonight: image nano-core:0.5.0-rc1
+LOADED on the VPS (dashboard + roles descriptor + self-hosted fonts,
+six frozen trees excluded); container the-creator healthy on 0.4.0-r1;
+cloudflared installed, DISABLED, token still the placeholder;
+monitoring patch LIVE (p99/429 trend rules + gated tunnel check);
+.env lacks DISCORD_CLIENT_SECRET and BOT_OWNER_ID.
+
+STEP 0 - BANK (workstation). Commit core + roles per the re-cut
+  Phase-1 runbook (.drafts/COMMIT_RUNBOOK_2026-08-07.txt steps for
+  core and roles ONLY - the six new-module steps are FROZEN, skip
+  them). Tag core v0.5.0. Then rebuild + re-ship the final image:
+    export TAG=0.5.0
+    docker build -t "nano-core:$TAG" .
+    docker run --rm --entrypoint sh "nano-core:$TAG" -c \
+      'ls /app/dist/web/app/index.html && find /app/modules -name nano-dashboard.json'
+    # expect index.html + EXACTLY ONE descriptor (roles)
+    docker save "nano-core:$TAG" | gzip -1 | ssh nano-vps 'gunzip | docker load'
+  (0.5.0-rc1 already on the VPS is the same tree unbanked; the final
+  tagged image replaces it for provenance. Remove rc afterwards:
+  ssh nano-vps 'docker rmi nano-core:0.5.0-rc1')
+
+STEP 1 - DISCORD PORTAL. Add redirect URI exactly:
+    https://bot.kyonax.tech/auth/callback
+  (additive and free; do it BEFORE public_url exists anywhere)
+
+STEP 2 - SECRETS (.env on the VPS, mode 0600 root:root). Append:
+    DISCORD_CLIENT_SECRET=   (from pass, owner keystroke only)
+    BOT_OWNER_ID=            (your Discord user id - without it
+                              NOBODY holds host tier)
+
+STEP 3 - TUNNEL TOKEN. Replace the placeholder in
+  /etc/cloudflared/tunnel.env (real token ~180+ chars), keep 0600
+  cloudflared:cloudflared, then:
+    systemctl enable --now cloudflared
+  Expect four "Registered tunnel connection" lines in
+  journalctl -u cloudflared. (The fleet alerter starts watching the
+  unit the moment it is enabled.)
+
+STEP 4 - ACCESS APPLICATION, BEFORE THE ROUTE (N11/G12). Cloudflare
+  Zero Trust > Access > Applications: self-hosted, bot.kyonax.tech,
+  Allow policy = owner email / One-time PIN. ENABLE MANAGED OAUTH
+  (401-not-302 for the SPA). RECORD THE AUD TAG.
+
+STEP 5 - TUNNEL ROUTE. Public hostname bot.kyonax.tech -> HTTP ->
+  127.0.0.1:4777. The CNAME auto-creates; ignore Hostinger's panel.
+
+STEP 6 - THE FLIP (config + compose in one sitting):
+  a) compose.yml: image: nano-core:0.5.0  and add
+       ports:
+         - "127.0.0.1:4777:4777"
+  b) /srv/bots/the-creator/state/nano.config.json - add the web
+     block. HARD RULE: enabled:true ONLY in the same edit that fills
+     access_team_domain AND access_aud - with them empty the origin
+     JWT layer stays DISARMED (server.ts arms it only when the team
+     domain is set):
+       "web": {
+         "enabled": true,
+         "bind": "0.0.0.0",
+         "port": 4777,
+         "public_url": "https://bot.kyonax.tech",
+         "session_ttl_h": 2,
+         "trust_proxy_header": false,
+         "access_team_domain": "<team>.cloudflareaccess.com",
+         "access_aud": "<the AUD tag from step 4>"
+       }
+  c) Validate BEFORE restart (a typo is a bot outage, G4):
+       python3 -m json.tool /srv/bots/the-creator/state/nano.config.json
+  d) cd /srv/bots/the-creator && docker compose up -d
+     NEVER docker compose down (the bridge subnet re-allocates).
+
+STEP 7 - VERIFY (runbook Phase 5): expect healthy restarts=0, ss
+  shows ONLY 127.0.0.1:4777; the three host-local curls to /api/me
+  return 403 FROM THE JWT LAYER (401 = failing); asset route shows
+  cache-control: private + cf-cache-status BYPASS/DYNAMIC; then the
+  round-trip invariant (edit a widget, /roles-config show reflects
+  it). Watch three heartbeats (15 min) before walking away.
+
+ROLLBACK unchanged (runbook): web.enabled false + up -d, or delete
+the tunnel route, or repoint image: 0.4.0-r1 and drop ports:.

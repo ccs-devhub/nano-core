@@ -1,0 +1,122 @@
+@use './fonts';
+@use './tokens' as t;
+
+// Global element base — the Kyonax Book laws applied to the shell.
+* {
+  box-sizing: border-box;
+}
+
+/* ADA: a visible keyboard focus ring everywhere, in the accent. */
+:focus-visible {
+  outline: 1px solid t.$accent;
+  outline-offset: 2px;
+}
+
+body {
+  margin: 0;
+  background: t.$bg;
+  color: t.$text;
+  font-family: t.$font-mono;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+h1,
+h2,
+h3 {
+  font-family: t.$font-sans;
+  font-weight: 400;
+  margin: 0;
+}
+
+a {
+  color: t.$text;
+}
+
+button {
+  font-family: t.$font-mono;
+  font-size: 12px;
+  background: t.$surface-raised;
+  color: t.$text;
+  border: t.$hair;
+  border-radius: 0;
+  padding: t.$grid calc(t.$grid * 2);
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: t.$accent;
+}
+
+button:disabled {
+  color: t.$dim;
+  cursor: not-allowed;
+}
+
+button.danger {
+  border-color: t.$danger;
+  color: t.$danger;
+}
+
+input,
+select,
+textarea {
+  font-family: t.$font-mono;
+  font-size: 13px;
+  background: t.$surface;
+  color: t.$text;
+  border: t.$hair;
+  border-radius: 0;
+  padding: t.$grid;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: t.$accent;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+th,
+td {
+  border: t.$hair;
+  padding: t.$grid;
+  text-align: left;
+  font-size: 12px;
+}
+
+th {
+  color: t.$muted;
+  font-weight: 400;
+}
+
+/* Custom tooltips, app-wide: any element carrying data-tip grows a
+   Book-styled bubble on hover or keyboard focus. */
+[data-tip] {
+  position: relative;
+}
+
+[data-tip]:hover::after,
+[data-tip]:focus-visible::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  background: t.$bg;
+  border: t.$hair;
+  color: t.$text;
+  padding: 4px 8px;
+  font-size: 10px;
+  font-family: t.$font-mono;
+  line-height: 1.5;
+  width: max-content;
+  max-width: 260px;
+  white-space: normal;
+  z-index: 30;
+  pointer-events: none;
+}

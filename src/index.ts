@@ -24,6 +24,7 @@ import { loadCoreModule, loadExternalModules } from
 import { ModuleRegistry } from '@/registry/module-registry.js';
 import { loadConfig, setModuleState } from '@/registry/nano-config.js';
 import { NanoCache } from '@/services/cache.js';
+import { registerCommandGates } from '@/services/command-gates.js';
 import { CooldownManager } from '@/services/cooldown.js';
 import { DatabaseService } from '@/services/database.js';
 import { installProcessGuards } from '@/services/errors.js';
@@ -175,6 +176,8 @@ const GUILD_STORE = new GuildStore(
   CACHE
 );
 
+registerCommandGates(GUILD_STORE);
+
 const VITALS = new VitalsService({
   bot: BOT,
   bot_name: CONFIG.bot.name,
@@ -255,6 +258,14 @@ for (const _external of EXTERNAL_MODULES) {
 
 /* PF6: persisted one-shots re-arm at ClientReady inside the boot
    reconcile pass — never against a logged-out client. */
+
+/* P12: the web dashboard host — a core connection like the TUI,
+   loaded ONLY when enabled so a disabled web costs the boot nothing.
+   After services attach, before login; never throws (degraded). */
+if (CONFIG.web.enabled) {
+  const WEB = await import('@/web/index.js');
+  await WEB.startWebIfEnabled(BOT, CONFIG);
+}
 
 const TOKEN: string | undefined = process.env.DISCORD_TOKEN;
 const CLIENT_ID: string | undefined = process.env.CLIENT_ID;

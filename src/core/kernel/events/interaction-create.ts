@@ -4,10 +4,19 @@ import type {
 } from 'discord.js';
 import { MessageFlags } from 'discord.js';
 
-import { TEXT_COOLDOWN, TEXT_DISABLED_MODULE } from
-  '@/constants/text.js';
+import {
+  TEXT_COMMAND_GATED_LIMITED,
+  TEXT_COMMAND_GATED_OFF,
+  TEXT_COOLDOWN,
+  TEXT_DISABLED_MODULE
+} from '@/constants/text.js';
 import { parseCustomId } from '@/misc/utility/custom-id.js';
 import { fillSlots } from '@/misc/utility/format.js';
+import type { CommandGatesConfig } from '@/services/command-gates.js';
+import {
+  COMMAND_GATES_NAMESPACE,
+  evaluateCommandGate
+} from '@/services/command-gates.js';
 import { replyWithError } from '@/services/errors.js';
 import { getLogger } from '@/services/logger.js';
 import type {
@@ -66,6 +75,38 @@ async function handleCommand(
       flags: MessageFlags.Ephemeral,
     });
     return;
+  }
+
+  /* THE PER-GUILD COMMAND GATE (owner-shaped from the dashboard):
+     runs after the host-wide module switch, before cooldowns. */
+  if (interaction.guildId) {
+    const STORE = interaction.client.services?.guild_store;
+
+    if (STORE) {
+      const GATES = STORE.getGuildModuleConfig<CommandGatesConfig>(
+        interaction.guildId,
+        COMMAND_GATES_NAMESPACE
+      );
+      const VERDICT = evaluateCommandGate(
+        GATES,
+        interaction.commandName,
+        subcommandPath(interaction),
+        {
+          user_id: interaction.user.id,
+          role_ids: memberRoleIds(interaction),
+        }
+      );
+
+      if (!VERDICT.allowed) {
+        await interaction.reply({
+          content: VERDICT.reason === 'disabled'
+            ? TEXT_COMMAND_GATED_OFF
+            : TEXT_COMMAND_GATED_LIMITED,
+          flags: MessageFlags.Ephemeral,
+        });
+        return;
+      }
+    }
   }
 
   const COOLDOWNS = interaction.client.services?.cooldowns;
@@ -145,6 +186,24 @@ async function runPostCommandHooks(
       );
     }
   }
+}
+
+/** Role ids from either member shape (raw array or manager). */
+function memberRoleIds(
+  interaction: NanoCommandInteraction
+): string[] {
+  const MEMBER = interaction.member;
+
+  if (!MEMBER) {
+    return [];
+  }
+
+  const ROLES = MEMBER.roles;
+
+  if (Array.isArray(ROLES)) {
+    return ROLES;
+  }
+  return [...ROLES.cache.keys()];
 }
 
 function subcommandPath(

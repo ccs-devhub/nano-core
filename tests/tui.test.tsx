@@ -24,6 +24,33 @@ function sleep(ms: number): Promise<void> {
   });
 }
 
+/* THE FLAKE POSTURE: under full-suite worker contention ink-testing
+   can drop, delay or reorder keystrokes (a captured failure shows a
+   delayed enter opening the TEXT field's edit mode and navigation
+   keys typed as literal text). No amount of in-test convergence
+   survives arbitrary reordering, so the interactive tests use simple
+   deterministic key sequences with marker waits and DECLARED RETRIES
+   - each retry remounts a fresh component, and a clean mount passes
+   deterministically. */
+const POLL_MS = 5;
+const WAIT_TIMEOUT_MS = 2000;
+const INTERACTIVE_RETRY = 3;
+const INTERACTIVE_TEST_TIMEOUT_MS = 15000;
+
+async function waitForText(
+  read: () => string | undefined,
+  needle: string
+): Promise<void> {
+  const DEADLINE = Date.now() + WAIT_TIMEOUT_MS;
+
+  while (Date.now() < DEADLINE) {
+    if ((read() ?? '').includes(needle)) {
+      return;
+    }
+    await sleep(POLL_MS);
+  }
+}
+
 describe('Form', (): void => {
   it('renders fields with their values', (): void => {
     const { lastFrame } = render(
@@ -37,43 +64,59 @@ describe('Form', (): void => {
     expect(lastFrame()).toContain('Pretty logs');
   });
 
-  it('toggles booleans and saves values', async (): Promise<void> => {
-    const ON_SAVE = vi.fn();
-    const { stdin, lastFrame } = render(
-      <UiStateProvider>
-        <Form fields={FIELDS} onSave={ON_SAVE} />
-      </UiStateProvider>
-    );
+  it(
+    'toggles booleans and saves values',
+    { retry: INTERACTIVE_RETRY, timeout: INTERACTIVE_TEST_TIMEOUT_MS },
+    async (): Promise<void> => {
+      const ON_SAVE = vi.fn();
+      const { stdin, lastFrame } = render(
+        <UiStateProvider>
+          <Form fields={FIELDS} onSave={ON_SAVE} />
+        </UiStateProvider>
+      );
 
-    stdin.write('j');
-    await sleep(10);
-    stdin.write('\r');
-    await sleep(10);
-    expect(lastFrame()).toContain('true');
+      stdin.write('j');
+      await waitForText(lastFrame, '> Pretty logs');
+      stdin.write('\r');
+      await waitForText(lastFrame, 'true');
+      expect(lastFrame()).toContain('true');
 
-    stdin.write('s');
-    await sleep(10);
-    expect(ON_SAVE).toHaveBeenCalledWith(
-      expect.objectContaining({ pretty: true, name: 'nano-bot' })
-    );
-  });
+      stdin.write('s');
 
-  it('cycles select options', async (): Promise<void> => {
-    const { stdin, lastFrame } = render(
-      <UiStateProvider>
-        <Form fields={FIELDS} onSave={(): void => {}} />
-      </UiStateProvider>
-    );
+      const DEADLINE = Date.now() + WAIT_TIMEOUT_MS;
 
-    stdin.write('j');
-    await sleep(10);
-    stdin.write('j');
-    await sleep(10);
-    stdin.write('\r');
-    await sleep(10);
+      while (
+        Date.now() < DEADLINE &&
+        ON_SAVE.mock.calls.length === 0
+      ) {
+        await sleep(POLL_MS);
+      }
+      expect(ON_SAVE).toHaveBeenCalledWith(
+        expect.objectContaining({ pretty: true, name: 'nano-bot' })
+      );
+    }
+  );
 
-    expect(lastFrame()).toContain('postgres');
-  });
+  it(
+    'cycles select options',
+    { retry: INTERACTIVE_RETRY, timeout: INTERACTIVE_TEST_TIMEOUT_MS },
+    async (): Promise<void> => {
+      const { stdin, lastFrame } = render(
+        <UiStateProvider>
+          <Form fields={FIELDS} onSave={(): void => {}} />
+        </UiStateProvider>
+      );
+
+      stdin.write('j');
+      await waitForText(lastFrame, '> Pretty logs');
+      stdin.write('j');
+      await waitForText(lastFrame, '> Driver');
+      stdin.write('\r');
+      await waitForText(lastFrame, 'postgres');
+
+      expect(lastFrame()).toContain('postgres');
+    }
+  );
 });
 
 describe('ToggleList', (): void => {

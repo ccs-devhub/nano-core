@@ -22,6 +22,10 @@ describe('nano-config', (): void => {
     expect(loadConfig(createTempRoot())).toEqual(defaultConfig());
   });
 
+  it('defaults the web session TTL to two hours (Q7)', (): void => {
+    expect(defaultConfig().web.session_ttl_h).toBe(2);
+  });
+
   it('round-trips a saved config', (): void => {
     const ROOT = createTempRoot();
     const CONFIG = {

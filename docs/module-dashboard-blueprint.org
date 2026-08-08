@@ -1,0 +1,351 @@
+#+TITLE: The Module Dashboard Blueprint (nano-core 0.4.0)
+#+AUTHOR: Cristian D. Moreno
+#+OPTIONS: toc:t num:t H:3
+#+LANGUAGE: en
+
+The document a module author reads before writing a single line of
+=nano-dashboard.json=. The law is [[file:rules/rule-web.org][rule-web.org]]; the recipe is
+[[file:web-dashboard.ai.org][web-dashboard.ai.org]]; the schema at =src/lib/types/nano-dashboard.ts=
+is the truth. This file is the authoring guide that sits between
+them.
+
+Sources of truth, in precedence order: the schema
+(=nano-dashboard.ts=, what is EXPRESSIBLE) > the host
+(=src/web/module-routes.ts=, what is ENFORCED) > the store
+(=guild-store.ts=, what is PERSISTED) > the renderer
+(=src/web/client/src/components/widget-host.vue=, what is SEEN) >
+the gate (=dashboard-audit.ts=, what is REFUSED AT BUILD).
+
+The empirical reference is =modules/roles/nano-dashboard.json= -
+43,130 bytes, max path depth 12, 55 fields, 16 of 29 provides
+bound. Treat those numbers as the BUDGET, not the target.
+
+* The anatomy
+  Render order in =views/module-window.vue=: skeleton,
+  breadcrumbs, language toggle, config_version banner, error
+  banner, ABOUT block, RUN divider + action rows, CONFIGURE
+  divider + feature grid, LIVE divider + data views. =?s== deep
+  links a single section.
+
+** The about block
+   Optional. Stacked carousel, badges, description, command tags.
+   =description= supports =**bold**= enclosures - an ODD number
+   of markers silently disables the split. Badges render at a
+   fixed 20px height; house convention is =img.shields.io= with
+   =style=flat-square= and =labelColor=0a0a0a=. Media is an
+   inline carousel with CLICK-TO-LOAD video (a poster facade
+   until clicked), never a modal.
+
+   Assets live in =<module>/nano-dashboard-assets/=, raster only,
+   flat filenames, 8 MB cap, served behind the READ BAR.
+
+** The eleven field types
+   =boolean= =number= =text= =template= =color= =select=
+   =snowflake= =snowflake_list= =group= =array= =variant=.
+
+   Base shape on every field: =key= (snake_case, MUST equal a zod
+   schema key), =label=, =help=, =tier=, =propagation=,
+   =offer_actions=.
+
+   Behaviours that surprise authors:
+   - A =variant= case switch is DESTRUCTIVE - switching rebuilds
+     from defaults and drops every sibling key of the previous
+     case, with no confirm. Never put expensive-to-retype data
+     behind a discriminator.
+   - =array.max= gates only the add button. =array.min=,
+     =snowflake_list.min/max= are never enforced anywhere. Your
+     zod schema is the only real bound.
+   - =text.pattern= IS A DEAD FIELD - declared in the schema,
+     typed in the client, referenced by zero render or validation
+     code. Roles ships one that does nothing. Put the constraint
+     in zod.
+   - =color= has no picker and no hex validation; it renders as a
+     plain text input.
+   - =select.options= are stored VALUES rendered as their own
+     labels. Localizing them corrupts stored data.
+   - =snowflake= with =kind: "user"= gets no picker - free text
+     plus a resolved-name line. Always ship a placeholder.
+   - =default= applies only to NEWLY CREATED array/group/variant
+     children, never to a top-level key. Top-level defaults are
+     your zod schema's job.
+
+** Tiers
+   =discord= (reachable from the module's own slash bar), =ops=
+   (structural, operator-only), =host= (the module's privileged
+   references).
+
+   =host= is enforced SERVER-SIDE on the diff - a hand-crafted
+   PUT cannot slip a host key past the UI. But =discord= vs =ops=
+   carries NO enforcement difference today; both ride the same
+   admin bar. The tier records provenance.
+
+   Since 2026-08-07 the host tier is READ-protected too:
+   =GET /config= withholds host VALUES from non-owners (the key
+   survives as null so the widget renders read-only). Still prefer
+   =nano.config.json= or the environment for true credentials -
+   host tier protects the transport, not the storage.
+
+** The reserved =enabled= switch
+   Convention, not schema. The word appears nowhere in the
+   descriptor schema. Three client behaviours key on it: the
+   overview card slider, exclusion from the config pane, and the
+   functionality-card slider for a =<group>.enabled= child.
+
+   THE CORE NEVER READS IT. Honouring the guild-level =enabled=
+   is entirely the module's job, on every event, task and
+   provides entry point - and it must be REPORTED, never failed
+   silently. Name it exactly =enabled=.
+
+** Data views and actions
+   Views are read-bar only, cooldown keyed per GUILD. Params
+   arrive from =searchParams= and are therefore ALWAYS STRINGS.
+   =manual: true= is CLIENT-SIDE ONLY - a direct GET runs the
+   view regardless, so it is not a throttle.
+
+   Actions are write-bar (session + CSRF + THE LIVE CHECK).
+   Dispatch order matters: the cooldown burns BEFORE the body is
+   read, and the param filter is KEYS ONLY - a field declared
+   =number= may receive a 400 KB nested object.
+
+   Three presentations, chosen by the returned shape: =tiles= for
+   a stat strip, rows + a =columns= declaration for a table,
+   anything else for raw JSON beside =explain=.
+
+* The config lifecycle
+  Per-guild config is ONE ROW PER KEY, LRU-cached per process,
+  never written on read - a guild with no rows gets schema
+  defaults, so joining costs zero writes.
+
+  The PUT accepts the WHOLE object and writes DIFF-THEN-PATCH:
+  only changed keys reach the store, so a save never freezes
+  defaults as explicit rows. The diff IS the audit log's
+  =changed_keys=. Corollary: a key absent from the PUT body is
+  never diffed and NEVER DELETED. There is no delete verb - model
+  removal as an explicit empty value.
+
+  Three numbers must agree: the module =config_version=, the
+  descriptor =config_version=, and =api_version= on both. An
+  =api_version= mismatch is a HARD refusal (every dispatch 500s);
+  a =config_version= mismatch is a soft amber banner and
+  placeholder widgets that contribute nothing to the PUT.
+
+  Bumping =config_version= REQUIRES a =migrate= hook or old rows
+  misparse into defaults and the guild's configuration silently
+  vanishes.
+
+** Propagation - the field every author forgets
+   The stored value is current immediately; the EFFECT is not.
+   Classify every key:
+   - IMMEDIATE - the next read is the next behaviour. Still write
+     the note.
+   - NEXT EVENT - applies from the next join, role change or
+     detection. Name the event.
+   - MANUAL SWEEP - nothing happens until an operator runs
+     something. Write the note AND ship =offer_actions=.
+
+   =offer_actions= fires only for TOP-LEVEL changed keys. Never
+   offer a =host=-gated action - the button renders for ops
+   admins and 403s on click.
+
+* The author checklist
+  1. Declare the descriptor AT BIRTH, beside the module entry.
+  2. REGISTER A CONFIG SCHEMA in =onEnable=. This is mandatory
+     and since 2026-08-07 the core ENFORCES it: =validateForWrite=
+     refuses every guild-config write for a module with no
+     registered schema, and bounds each candidate (<=6 container
+     levels, <=2000 values, <=8 KB per string) before the schema
+     parse. Every caller hits the gate — the web PUT is only one.
+     The advisory =checkGuildModuleConfig= still passes schema-less
+     candidates; never treat it as the write gate.
+  3. The schema MUST parse ={}= - every key needs a =.default()=,
+     and every default should be EMPTY.
+  4. Declare ONE surfaces map with =as const satisfies
+     Record<keyof Config, ConfigSurface>= so a missing key is a
+     COMPILE error. Test-pin every other copy back to it.
+  5. Expose provides as two tiers: positional-arg functions for
+     the module-to-module API, and =*Action= adapters taking
+     =(guild_id, params)= that re-apply the guards. THE DASHBOARD
+     BINDS ONLY THE ADAPTERS.
+  6. Set =cooldown_s= on every action and every non-trivial view.
+     Since 2026-08-07 the core enforces a floor on every bound
+     surface (views 1 s, actions 2 s) and a declared value can only
+     RAISE it — still declare real cooldowns; the floor is a
+     backstop, not a policy.
+  7. THE PERSISTED-JOB POSTURE - a BIRTH REQUIREMENT (2026-08-07):
+     STATIC job names get a =tasks= map; PER-ENTITY names need a
+     boot-time rescan from your own durable table, because a
+     static map cannot resolve a dynamic name and
+     =rearmPersistedJobs= skips it silently. DECLARE which posture
+     the module uses in =MANUAL.org= and =<name>.ai.org= and gate
+     it in the module suite - a persistent =scheduleOnce= with a
+     dynamic name and no rescan is a defect. Roles uses the
+     rescan and calls it "the durable path".
+  8. OUTCOME HONESTY - a BIRTH REQUIREMENT (2026-08-07): always a
+     =NanoResult=, and NAME the refusal (=disabled=,
+     =no_snapshot=, =unconfigured=). A bare value is wrapped as
+     success and erases every failure mode; a "success" that did
+     nothing is a defect class.
+  9. Ship the assets and a help card on every command path.
+
+* The security rules
+** The throttle floor
+   Since 2026-08-07 the core enforces a floor on every bound
+   surface (views 1 s, actions 2 s); =cooldown_s= can only raise
+   it. The floor is a backstop, not a policy: write the number you
+   would accept being called at, by an authenticated guild admin,
+   in a loop, forever. =manual: true= is not a throttle. Anything
+   expensive needs both =manual= and a real cooldown.
+
+** Validate every param inside the provides
+   The host filters to the declared KEYS, and since 2026-08-07
+   type-checks every declared ACTION param value against the field
+   type (mistyped = 400, never dispatched). Data-view params are
+   still raw strings. Type-shape is not meaning: never index a
+   database, build a Discord route or interpolate a string with a
+   param you have not narrowed yourself. The action route
+   additionally RUNS ON A REJECTED BODY (F14 open), so treat
+   missing params as a first-class case.
+
+** External URLs
+   Since 2026-08-07 badge and media image urls are LOCKED to the
+   shared allowlist =DASHBOARD_IMAGE_HOSTS= (img.shields.io,
+   cdn.discordapp.com, i.ytimg.com) - the same list the F5 CSP
+   =img-src= is built from via =cspImgSrcDirective()=. Growing the
+   list is a core change, never a module one. Click-through hrefs
+   stay plain https. Use =img.shields.io= only; prefer a local
+   asset. Never put a guild id, user id or config value into a
+   badge URL.
+
+** Descriptor weight
+   Since 2026-08-07 the bounds are real: 64 KB size cap checked
+   before the read, raw JSON depth <=32 checked before zod, field
+   nesting <=8, =.max(2048)= on free text. The descriptor is still
+   re-read and re-parsed SYNCHRONOUSLY ON THE GATEWAY EVENT LOOP
+   on every =/modules=, =/instance= and =/descriptor= request
+   (C17 open). Budget 43 KB. Short =help=, long =explain=, no
+   per-environment variants.
+
+** What must NEVER be bound
+   1. THE PROVIDES SURFACE TRUSTS ITS CALLER; THE DASHBOARD DOES
+      NOT GET TO. A function exists so another MODULE can call it
+      having already done its own authorization. Binding it hands
+      that trusted seam to any guild admin with a browser.
+   2. NEVER BIND A CAPABILITY THAT BELONGS TO ANOTHER MODULE.
+      Ask: if this were a slash command, whose permission bit
+      would gate it? If the answer is not "the same bar as
+      =web.admin_permissions=", do not bind it.
+   3. BIND A CHECKED ADAPTER, NEVER THE RAW FUNCTION.
+   4. THE DESTRUCTIVE TIER LADDER: reversible and scoped -> plain
+      =ops=; destructive but recoverable -> =danger= + =confirm=;
+      destructive, wide, or able to touch data the admin did not
+      create -> =actor_gate: "host"=.
+   5. THE MEMBER-FETCH LAW: no web-bound provides may trigger a
+      full guild member fetch. Batching is NOT the fix - it is a
+      gateway opcode-8 request against a budget that survives
+      restarts.
+   6. WRITE THE NEGATIVE TEST. The forbidden set is invisible in
+      the descriptor; only =expect(BOUND).not.toContain(...)=
+      makes it durable across refactors.
+
+** The escalation primitive
+   The dashboard admin bar defaults to Administrator OR
+   ManageGuild. A ManageGuild holder is not an Administrator -
+   but a config key naming a role the bot will later GRANT turns
+   any such key into privilege escalation:
+
+   : ManageGuild admin -> points a self-serve panel entry at
+   : @Admin -> publishes the panel -> any member clicks it ->
+   : the bot grants @Admin
+
+   The bot's hierarchy check does not stop this. The escalation
+   is CONFIG, not ACTION.
+
+   The defence is =config.validate=, a provides name invoked as
+   =(guild_id, candidate)= on every PUT, after zod and before any
+   write. Enumerate every AUTOMATED GRANT TARGET - any config key
+   naming a role, channel or webhook the module acts on without a
+   human in the loop - resolve from =guild.roles.cache= (free, no
+   REST), and REFUSE, do not warn. Ship the hook from day one
+   even if it starts by returning =ok(null)=, so it exists before
+   the first dangerous key does.
+
+* The core-change register
+  Gaps between what this blueprint needs and what the code does.
+  C9-C18 are already tracked as D/F items; C1-C8, C19 and C20 are
+  new.
+
+  | #   | Gap                                                      |
+  |-----+----------------------------------------------------------|
+  | C1  | =array.min=, =snowflake_list.min/max= never enforced     |
+  | C2  | =text.pattern= is a dead field - zero consumers          |
+  | C3  | =color= has no picker and no hex validation              |
+  | C4  | =discord= vs =ops= carries no enforcement difference     |
+  | C5  | Core never enforces the reserved =enabled= key           |
+  | C6  | =manual: true= is client-side only                       |
+  | C7  | =sendProvides= returns HTTP 200 for ={ok:false}=         |
+  | C8  | =variant= case switch destroys siblings, no confirm      |
+  | C9  | CLOSED 2026-08-07: write path refuses schema-less        |
+  |     | modules and enforces the core write ceiling              |
+  | C10 | CLOSED 2026-08-07: core floor on every bound surface     |
+  |     | (views 1 s, actions 2 s); =cooldown_s= only raises it    |
+  | C11 | CLOSED 2026-08-07: =dashboardValueProblem= type-checks   |
+  |     | every declared action param VALUE; mistyped = 400        |
+  | C12 | Action route RUNS ON A REJECTED BODY                     |
+  | C13 | CLOSED 2026-08-07: 64 KB size cap before read, JSON      |
+  |     | depth 32 before zod, field nesting 8, text .max(2048)    |
+  | C14 | CLOSED 2026-08-07: image urls locked to the shared       |
+  |     | allowlist (=DASHBOARD_IMAGE_HOSTS=); hrefs stay https    |
+  | C15 | Asset route sets =Cache-Control: public= behind the bar |
+  | C16 | Brand fonts declared, never shipped - 0 =@font-face=     |
+  | C17 | Descriptor re-read and re-parsed per request, sync       |
+  | C18 | No throttle on =PUT /config= or =PUT .../gates=          |
+  | C19 | Gates PUT returns 400 on oversize; config PUT sends 413  |
+  | C20 | No =offer_actions= on data views                         |
+
+  CLOSED 2026-08-07 (was: the HOST-TIER READ LEAK): the config
+  GET now withholds host-tier VALUES from non-owners (the key
+  survives as null so the widget renders read-only). Credentials
+  at host tier are read-protected - P5's prerequisite.
+
+* The anti-patterns
+  1. Binding a raw inter-module provides function.
+  2. Binding a capability that belongs to another module.
+  3. Omitting =cooldown_s=.
+  4. Auto-loading an expensive data view (needs =manual= AND a
+     cooldown).
+  5. Not registering a config schema.
+  6. A zod schema that cannot parse ={}=.
+  7. A third copy of the tier list.
+  8. Nested key drift between zod and the descriptor - THE WORST
+     failure mode in the contract: the widget saves green and the
+     value is silently dropped.
+  9. A plain string where =languages= is declared.
+  10. Localizing =select.options=.
+  11. Naming the master switch anything but =enabled=.
+  12. Assuming the core honours =enabled=.
+  13. A persistent =scheduleOnce= with a dynamic name and no
+      rescan.
+  14. Returning a bare value from a provides function.
+  15. Omitting =propagation=.
+  16. =offer_actions= pointing at a =host=-gated action.
+  17. =explain= duplicating =help=.
+  18. Expensive-to-retype data behind a =variant= discriminator.
+  19. Badges from arbitrary hosts.
+  20. Letting the descriptor grow unbounded.
+  21. Trusting a param's declared =type=.
+  22. Bumping =config_version= without a =migrate= hook.
+  23. Assuming a key absent from the PUT body gets deleted.
+  24. =action_groups[].see= pointing at a renamed view.
+
+* Verification
+  Host repo: =npm run dashboard= (audits every local descriptor),
+  =npm run audit:isolation=, =npm run lint=, =npm run build=,
+  =npx vitest run=, =npm run doctor=.
+
+  Module repo: the audit runs INSIDE the test suite, which is
+  stricter than the CLI because it fails on warns too. Pin, at
+  minimum: the descriptor parses; keys == zod shape == surfaces
+  map; =config_version= and =api_version= equality; every bound
+  provides name exists; THE SAFE-ACTION-SET NEGATIVE TEST; every
+  =offer_actions= id resolves; no third tier copy; NESTED keys
+  equal the zod sub-shapes; language completeness.

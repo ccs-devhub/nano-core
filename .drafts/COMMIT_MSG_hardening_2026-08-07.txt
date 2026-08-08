@@ -1,0 +1,60 @@
+feat(web): Land the hardening turn - the contract freeze and the host armor
+
+TURN 1, THE FROZEN CONTRACT: guild-config writes refuse schema-less
+modules and ride the core write ceiling (<=6 levels / <=2000 values /
+<=8 KB strings) in validateForWrite where every caller hits it; the
+core throttle floor covers every bound surface (views 1 s, actions
+2 s, declarations only raise); declared action param VALUES are
+type-checked against the field vocabulary (mistyped = 400, cooldown
+consumed only when the dispatch runs); descriptors are bounded (64 KB
+before read, JSON depth 32 before zod, field nesting 8, text 2048)
+with roles validating unchanged; badge and media image urls lock to
+the shared DASHBOARD_IMAGE_HOSTS allowlist that cspImgSrcDirective()
+builds the future F5 img-src from.
+
+TURN 2, THE HARDENED HOST: origin Cloudflare Access JWT validation in
+the funnel ahead of routing (node:crypto RS256, JWKS cached, fails
+closed) armed by access_team_domain + access_aud; upstream bodies and
+absolute paths scrubbed from every client-facing error; explicit
+server limits with a persistent post-startup error listener and a
+clientError 400; bounded shutdown teardown; the private cache
+directive on the authenticated asset route; per-IP rate windows
+(auth/api/static) on the true client address behind trust_proxy_header;
+bot-presence folded into guardRead; unparseable action bodies refuse;
+member lookups gain a negative cache and a per-guild REST window; a
+64-request concurrency shed; the funnel socket leak closed; request
+ids on every response; every 401/403/429 leaves a web_denial line;
+audit lines carry the client IP; vitals emit event_loop_lag_max_ms;
+the web zod schema gains trust_proxy_header/access_team_domain/
+access_aud so prod config keys stop being silently stripped.
+
+THE ROUND-2 TAIL (same day, after the Phase-1 freeze ruling): the
+expired-session 401 joins the web_denial log line (the one denial
+that bypasses sendJson); /instance scopes database_driver, intents
+and the socket facts to the host owner with the client rendering
+them conditionally; /stats gains a 30 s per-guild cache ahead of a
+2 s cooldown so repeat views cost zero REST; the session and oauth
+cookies take the __Host- prefix with Secure structural (the config
+switch is gone); Poppins and Space Mono ship as self-hosted latin
+woff2 inside the bundle - no external font host, font-src 'self'
+stays true; PUT config and PUT command-gates ride a per-guild 3 s
+house bucket consumed only after validation; the web session TTL
+default drops 12 h to 2 h.
+
+THE BUILD SURFACE: tsconfig.web.json joins the Dockerfile COPY list
+(its absence failed build:fleet, so no fleet image could ever have
+carried the dashboard) and .dockerignore enforces THE PHASE-1
+FREEZE - the six unbanked module trees never enter the image
+context; the fleet image bakes exactly roles + synapse +
+embed-styler + mcp with one dashboard descriptor.
+
+Docs move with the code: the blueprint's stale claims rewritten to
+the enforced truth, register rows C9/C10/C11/C13/C14 closed, birth
+requirements 8 (persisted-job posture) and 9 (outcome honesty)
+written into the binding contract; the deploy runbook's STOP
+premise rewritten to the shipped truth with the flip pack beside
+it.
+
+Gates: lint 0, build incl build:web, vitest 345, doctor green,
+descriptor audit green, isolation clean, image shape assertion
+exact (one descriptor, dist/web present, four woff2).

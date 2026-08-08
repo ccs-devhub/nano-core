@@ -1,0 +1,21 @@
+// Kyonax Book tokens — the design laws for the dashboard client:
+// accent #ededed, 1px hairlines, the 8px grid, Space Mono + Poppins,
+// no radius, no gradients, no emoji.
+
+$bg: #0a0a0a;
+$surface: #101010;
+$surface-raised: #161616;
+$hairline: #2a2a2a;
+$text: #ededed;
+$muted: #9a9a9a;
+$dim: #5a5a5a;
+$accent: #ededed;
+$danger: #e05252;
+$ok: #52e0a3;
+$warn: #e0c052;
+
+$font-mono: 'Space Mono', 'Cascadia Mono', monospace;
+$font-sans: 'Poppins', 'Inter', sans-serif;
+
+$grid: 8px;
+$hair: 1px solid $hairline;

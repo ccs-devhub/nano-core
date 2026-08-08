@@ -1,4 +1,4 @@
-export const NANO_VERSION = '0.4.0';
+export const NANO_VERSION = '0.5.0';
 export const NANO_REPO_URL = 'https://github.com/ccs-devhub/nano-core';
 export const CONFIG_FILE_NAME = 'nano.config.json';
 

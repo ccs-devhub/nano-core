@@ -86,7 +86,7 @@ const HELP = {
       long: 'Runs the health check of one module, or of every module ' +
         'when no name is given, and reports status plus details.',
       usage: '/module health [name]',
-      examples: ['/module health', '/module health synapse'],
+      examples: ['/module health', '/module health <name>'],
     },
     sync: {
       long: 'Re-registers the slash commands of every enabled module ' +

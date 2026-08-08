@@ -52,6 +52,8 @@ import jsdoc_plugin from 'eslint-plugin-jsdoc';
 import prefer_optional_chaining from 'eslint-plugin-prefer-optional-chaining';
 import simple_import_sort from 'eslint-plugin-simple-import-sort';
 import unicorn_plugin from 'eslint-plugin-unicorn';
+import vue_plugin from 'eslint-plugin-vue';
+import vue_a11y from 'eslint-plugin-vuejs-accessibility';
 
 import tseslint from 'typescript-eslint';
 
@@ -63,17 +65,29 @@ const __dirname = path.dirname(__filename);
 // Constant Variables
 const INDENTATION_SPACES = 2;
 
+/* Vue SFC zone (P12): eslint-plugin-vue's flat recommended set,
+   re-scoped from its global glob to the web client only. */
+const VUE_SFC_CONFIGS = [];
+
+for (const _entry of vue_plugin.configs['flat/recommended']) {
+  VUE_SFC_CONFIGS.push({
+    ..._entry,
+    files: ['src/web/client/**/*.vue'],
+  });
+}
+
 export default defineConfig([
   {
-    /* modules/roles is an external module checkout (its own repo,
-       its own identical gate harness) - the core toolchain treats
-       it as a black box. */
+    /* Everything under modules/ is an external module checkout
+       (its own repo, its own identical gate harness) - the core
+       toolchain treats each as a black box. THE MODULES-FOLDER
+       LAW: module trees never ride core git or core lint. */
     ignores: [
       'dist/**',
       'dist-modules/**',
       'node_modules/**',
       '.cache/**',
-      'modules/roles/**',
+      'modules/**',
     ],
   },
   {
@@ -328,6 +342,71 @@ export default defineConfig([
       'import/namespace': 'off',
       'import/no-named-as-default': 'off',
       'import/no-named-as-default-member': 'off',
+    },
+  },
+  ...VUE_SFC_CONFIGS,
+  /* ADA floor for the dashboard client (owner-directed audit). */
+  {
+    files: ['src/web/client/**/*.vue'],
+    plugins: { 'vuejs-accessibility': vue_a11y },
+    rules: {
+      'vuejs-accessibility/alt-text': 'error',
+      'vuejs-accessibility/anchor-has-content': 'error',
+      'vuejs-accessibility/aria-props': 'error',
+      'vuejs-accessibility/aria-role': 'error',
+      'vuejs-accessibility/aria-unsupported-elements': 'error',
+      'vuejs-accessibility/click-events-have-key-events': 'error',
+      'vuejs-accessibility/form-control-has-label': 'error',
+      'vuejs-accessibility/heading-has-content': 'error',
+      'vuejs-accessibility/iframe-has-title': 'error',
+      'vuejs-accessibility/interactive-supports-focus': 'error',
+      'vuejs-accessibility/label-has-for': 'off',
+      'vuejs-accessibility/mouse-events-have-key-events': 'off',
+      'vuejs-accessibility/no-autofocus': 'error',
+      'vuejs-accessibility/no-redundant-roles': 'error',
+      'vuejs-accessibility/role-has-required-aria-props': 'error',
+      'vuejs-accessibility/tabindex-no-positive': 'error',
+    },
+  },
+  {
+    files: ['src/web/client/**/*.vue'],
+    languageOptions: {
+      parserOptions: { parser: tseslint.parser },
+    },
+  },
+  {
+    /* Web client subtree: Vue SFCs and their harness relax the casing
+       matrix and typedefs exactly like the TUI zone (and only here).
+       The import resolver cannot see .vue modules; TS can. */
+    files: ['src/web/client/**/*.{ts,vue}'],
+    plugins: { '@typescript-eslint': tseslint.plugin },
+    rules: {
+      '@typescript-eslint/naming-convention': [
+        'error',
+        {
+          selector: 'default',
+          format: ['snake_case', 'camelCase', 'PascalCase', 'UPPER_CASE'],
+          leadingUnderscore: 'allow',
+        },
+        { selector: 'typeLike', format: ['PascalCase'] },
+        {
+          selector: ['property', 'typeProperty', 'objectLiteralProperty'],
+          format: null,
+        },
+      ],
+      '@typescript-eslint/typedef': 'off',
+      'padding-line-between-statements': 'off',
+      'import/no-unresolved': 'off',
+      'import/default': 'off',
+      'import/export': 'off',
+      'import/named': 'off',
+      'import/namespace': 'off',
+      'import/no-named-as-default': 'off',
+      'import/no-named-as-default-member': 'off',
+      /* The client is a Vite SFC tree: relative parent imports are
+         its convention — the @/ aliases belong to the server
+         tsconfig and never resolve in the client bundle. */
+      'no-restricted-imports': 'off',
     },
   },
   {
